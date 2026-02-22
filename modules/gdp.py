@@ -32,22 +32,6 @@ COLORS = {
     "inv_change":     "#7c3aed",
 }
 
-PLOT_LAYOUT = dict(
-    paper_bgcolor=BG,
-    plot_bgcolor=BG2,
-    font=dict(family="monospace", color=TEXT, size=11),
-    xaxis=dict(gridcolor=GRID, linecolor=GRID, tickfont=dict(color=MUTED)),
-    yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True,
-               zerolinecolor="#ffffff30"),
-    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT, size=10),
-                orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    hovermode="x unified",
-    margin=dict(l=50, r=20, t=60, b=40),
-)
-
-# ── Correct series codes from T10102 ──────────────────────────────────────────
-# GDP growth rate uses A191RL (Fisher Quantity Index, % change)
-# All contributions use suffix RY (Quantity Contributions)
 CODES = {
     "gdp":            "A191RL",
     "consumption":    "DPCERY",
@@ -65,6 +49,28 @@ CODES = {
     "federal":        "A823RY",
     "state_local":    "A829RY",
 }
+
+
+def make_layout(height=400, title=""):
+    return dict(
+        paper_bgcolor=BG,
+        plot_bgcolor=BG2,
+        font=dict(color=TEXT, size=11),
+        xaxis=dict(gridcolor=GRID, linecolor=GRID),
+        yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True, zerolinecolor="#444466"),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(color=TEXT, size=10),
+            orientation="h",
+            yanchor="bottom", y=1.02,
+            xanchor="left", x=0
+        ),
+        hovermode="x unified",
+        barmode="relative",
+        height=height,
+        margin=dict(l=50, r=20, t=50, b=40),
+        title=dict(text=title, font=dict(color=MUTED, size=11)) if title else None,
+    )
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -88,7 +94,6 @@ def load_bea_data():
     resp = requests.get("https://apps.bea.gov/api/data", params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
-
     rows = data["BEAAPI"]["Results"]["Data"]
     df = pd.DataFrame(rows)
 
@@ -113,8 +118,7 @@ def load_bea_data():
 
 
 def get_s(df, code):
-    mask = df["SeriesCode"] == code
-    return df[mask].set_index("Date")["DataValue"].sort_index()
+    return df[df["SeriesCode"] == code].set_index("Date")["DataValue"].sort_index()
 
 
 def qlabel(ts):
@@ -159,7 +163,7 @@ def render():
     common = common.sort_values()
 
     if len(common) < 2:
-        st.error(f"Not enough data. GDP points: {len(gdp)}, common: {len(common)}")
+        st.error(f"Not enough data. GDP: {len(gdp)} pts, common: {len(common)}")
         return
 
     gdp  = gdp.reindex(common).fillna(0)
@@ -167,7 +171,6 @@ def render():
     inv  = inv.reindex(common).fillna(0)
     gov  = gov.reindex(common).fillna(0)
     nx   = nx.reindex(common).fillna(0)
-
     quarters = [qlabel(d) for d in common]
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
@@ -211,20 +214,16 @@ def render():
             marker_color=color, marker_line_width=0,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
-
     fig.add_trace(go.Scatter(
         name="Total GDP", x=quarters, y=gdp.values, mode="markers",
-        marker=dict(symbol="diamond", size=8, color="#ffffff",
-                    line=dict(color=BG2, width=1)),
+        marker=dict(symbol="diamond", size=8, color="#ffffff", line=dict(color=BG2, width=1)),
         hovertemplate="<b>GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
-
-    fig.update_layout(**PLOT_LAYOUT, barmode="relative", height=400)
+    fig.update_layout(**make_layout(400))
     st.plotly_chart(fig, use_container_width=True)
 
     # ── Drill-downs ────────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Drill-Down</div>', unsafe_allow_html=True)
-
     tabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     with tabs[0]:
@@ -243,8 +242,8 @@ def render():
 
     with tabs[2]:
         _stacked([
-            ("Federal",       get_s(df, CODES["federal"]),      COLORS["federal"]),
-            ("State & Local", get_s(df, CODES["state_local"]),  COLORS["state_local"]),
+            ("Federal",       get_s(df, CODES["federal"]),     COLORS["federal"]),
+            ("State & Local", get_s(df, CODES["state_local"]), COLORS["state_local"]),
         ], common, quarters, "Government Components")
 
     with tabs[3]:
@@ -254,11 +253,11 @@ def render():
         ], common, quarters, "Net Exports Decomposition")
 
     with tabs[4]:
-        inv_change = get_s(df, CODES["inventories"]).reindex(common).fillna(0)
-        final_sales = gdp - inv_change
+        inv_ch = get_s(df, CODES["inventories"]).reindex(common).fillna(0)
+        fs     = gdp - inv_ch
         _stacked([
-            ("Final Sales",      final_sales, COLORS["final_sales"]),
-            ("Inventory Change", inv_change,  COLORS["inv_change"]),
+            ("Final Sales",      fs,     COLORS["final_sales"]),
+            ("Inventory Change", inv_ch, COLORS["inv_change"]),
         ], common, quarters, "Final Sales vs Inventory Investment")
 
     # ── Heatmap table ──────────────────────────────────────────────────────────
@@ -305,7 +304,5 @@ def _stacked(series_list, common, quarters, title):
             marker_color=color, marker_line_width=0,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
-    layout = dict(**PLOT_LAYOUT, barmode="relative", height=320,
-                  title=dict(text=title, font=dict(color=MUTED, size=11)))
-    fig.update_layout(**layout)
+    fig.update_layout(**make_layout(320, title))
     st.plotly_chart(fig, use_container_width=True)
