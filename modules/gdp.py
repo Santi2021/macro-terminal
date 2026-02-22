@@ -51,8 +51,8 @@ CODES = {
 }
 
 
-def make_layout(height=400, title=""):
-    d = dict(
+def make_layout(height=400):
+    return dict(
         paper_bgcolor=BG,
         plot_bgcolor=BG2,
         font=dict(color=TEXT, size=11),
@@ -70,9 +70,6 @@ def make_layout(height=400, title=""):
         height=height,
         margin=dict(l=50, r=20, t=60, b=40),
     )
-    if title:
-        d["title"] = dict(text=title, font=dict(color=MUTED, size=11), x=0)
-    return d
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -125,6 +122,16 @@ def get_s(df, code):
 
 def qlabel(ts):
     return f"{ts.year} Q{(ts.month - 1) // 3 + 1}"
+
+
+def add_diamond(fig, total_series, common, quarters, label):
+    """Add reference diamond markers showing the total contribution."""
+    vals = total_series.reindex(common).fillna(0).values
+    fig.add_trace(go.Scatter(
+        name=label, x=quarters, y=vals, mode="markers",
+        marker=dict(symbol="diamond", size=7, color="#ffffff"),
+        hovertemplate=f"<b>{label}</b>: %{{y:+.2f}} pp<extra></extra>",
+    ))
 
 
 def render():
@@ -182,7 +189,6 @@ def render():
         "Range", options=["5Y", "10Y", "20Y", "All"],
         index=1, horizontal=True, label_visibility="collapsed"
     )
-
     cuts = {"5Y": -20, "10Y": -40, "20Y": -80, "All": 0}
     cut  = cuts[selected]
     if cut != 0:
@@ -236,11 +242,10 @@ def render():
             marker_line_color=BG2, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
-    # Diamond line — sin line en marker para evitar error de Plotly
     fig.add_trace(go.Scatter(
         name="Total GDP", x=quarters, y=gdp.values, mode="markers",
         marker=dict(symbol="diamond", size=7, color="#ffffff"),
-        hovertemplate="<b>GDP</b>: %{y:+.2f}%<extra></extra>",
+        hovertemplate="<b>Total GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
     fig.update_layout(**make_layout(400))
     st.plotly_chart(fig, use_container_width=True)
@@ -250,43 +255,53 @@ def render():
     tabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     with tabs[0]:
-        st.markdown('<div class="drill-title">Durables / Nondurables / Services</div>', unsafe_allow_html=True)
-        _stacked([
+        st.markdown('<div class="drill-title">Durables / Nondurables / Services · ◆ = Total PCE contribution</div>', unsafe_allow_html=True)
+        fig = _stacked_fig([
             ("Durables",    get_s(df, CODES["durables"]),    COLORS["durables"]),
             ("Nondurables", get_s(df, CODES["nondurables"]), COLORS["nondurables"]),
             ("Services",    get_s(df, CODES["services"]),    COLORS["services"]),
         ], common, quarters)
+        add_diamond(fig, cons, common, quarters, "Total PCE")
+        st.plotly_chart(fig.update_layout(**make_layout(300)), use_container_width=True)
 
     with tabs[1]:
-        st.markdown('<div class="drill-title">Residential / Nonresidential / Inventories</div>', unsafe_allow_html=True)
-        _stacked([
+        st.markdown('<div class="drill-title">Residential / Nonresidential / Inventories · ◆ = Total Investment contribution</div>', unsafe_allow_html=True)
+        fig = _stacked_fig([
             ("Residential",    get_s(df, CODES["residential"]),    COLORS["residential"]),
             ("Nonresidential", get_s(df, CODES["nonresidential"]), COLORS["nonresidential"]),
             ("Inventories",    get_s(df, CODES["inventories"]),    COLORS["inventories"]),
         ], common, quarters)
+        add_diamond(fig, inv, common, quarters, "Total Investment")
+        st.plotly_chart(fig.update_layout(**make_layout(300)), use_container_width=True)
 
     with tabs[2]:
-        st.markdown('<div class="drill-title">Federal / State & Local</div>', unsafe_allow_html=True)
-        _stacked([
+        st.markdown('<div class="drill-title">Federal / State & Local · ◆ = Total Government contribution</div>', unsafe_allow_html=True)
+        fig = _stacked_fig([
             ("Federal",       get_s(df, CODES["federal"]),     COLORS["federal"]),
             ("State & Local", get_s(df, CODES["state_local"]), COLORS["state_local"]),
         ], common, quarters)
+        add_diamond(fig, gov, common, quarters, "Total Government")
+        st.plotly_chart(fig.update_layout(**make_layout(300)), use_container_width=True)
 
     with tabs[3]:
-        st.markdown('<div class="drill-title">Exports / Imports</div>', unsafe_allow_html=True)
-        _stacked([
+        st.markdown('<div class="drill-title">Exports / Imports · ◆ = Net Exports contribution</div>', unsafe_allow_html=True)
+        fig = _stacked_fig([
             ("Exports", get_s(df, CODES["exports"]), COLORS["exports"]),
             ("Imports", get_s(df, CODES["imports"]), COLORS["imports"]),
         ], common, quarters)
+        add_diamond(fig, nx, common, quarters, "Net Exports")
+        st.plotly_chart(fig.update_layout(**make_layout(300)), use_container_width=True)
 
     with tabs[4]:
-        st.markdown('<div class="drill-title">Final Sales vs Inventory Investment</div>', unsafe_allow_html=True)
         inv_ch = get_s(df, CODES["inventories"]).reindex(common).fillna(0)
         fs     = gdp - inv_ch
-        _stacked([
+        st.markdown('<div class="drill-title">Final Sales vs Inventory Investment · ◆ = Total GDP</div>', unsafe_allow_html=True)
+        fig = _stacked_fig([
             ("Final Sales",      fs,     COLORS["final_sales"]),
             ("Inventory Change", inv_ch, COLORS["inv_change"]),
         ], common, quarters)
+        add_diamond(fig, gdp, common, quarters, "Total GDP")
+        st.plotly_chart(fig.update_layout(**make_layout(300)), use_container_width=True)
 
     # ── Heatmap table ──────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Last 8 Quarters</div>', unsafe_allow_html=True)
@@ -323,7 +338,8 @@ def render():
     st.dataframe(styled, use_container_width=True)
 
 
-def _stacked(series_list, common, quarters):
+def _stacked_fig(series_list, common, quarters):
+    """Build stacked bar figure without rendering — caller adds diamond and renders."""
     fig = go.Figure()
     for name, s, color in series_list:
         vals = s.reindex(common).fillna(0).values
@@ -333,5 +349,4 @@ def _stacked(series_list, common, quarters):
             marker_line_color=BG2, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
-    fig.update_layout(**make_layout(300))
-    st.plotly_chart(fig, use_container_width=True)
+    return fig
