@@ -71,7 +71,7 @@ def make_layout(height=400, title=""):
         margin=dict(l=50, r=20, t=60, b=40),
     )
     if title:
-        d["title"] = dict(text=title, font=dict(color=MUTED, size=11), x=0, pad=dict(b=20))
+        d["title"] = dict(text=title, font=dict(color=MUTED, size=11), x=0)
     return d
 
 
@@ -139,9 +139,7 @@ def render():
     .sec { font-family:monospace; font-size:0.68rem; color:#6b6b8a; text-transform:uppercase;
            letter-spacing:0.15em; margin:24px 0 8px 0; border-bottom:1px solid #1e1e3a; padding-bottom:6px; }
     .drill-title { font-family:monospace; font-size:0.78rem; color:#9999bb;
-                   margin: 12px 0 4px 0; padding: 6px 0; }
-    /* Radio horizontal en una sola fila */
-    div[role="radiogroup"] { flex-direction: row !important; gap: 12px; }
+                   margin:12px 0 4px 0; padding:6px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -179,14 +177,14 @@ def render():
     nx   = nx.reindex(common).fillna(0)
     quarters = [qlabel(d) for d in common]
 
-    # ── Range selector — una sola fila ─────────────────────────────────────────
-    range_options = {"5Y": -20, "10Y": -40, "20Y": -80, "All": 0}
+    # ── Range selector ─────────────────────────────────────────────────────────
     selected = st.radio(
-        "Range", options=list(range_options.keys()),
+        "Range", options=["5Y", "10Y", "20Y", "All"],
         index=1, horizontal=True, label_visibility="collapsed"
     )
 
-    cut = range_options[selected]
+    cuts = {"5Y": -20, "10Y": -40, "20Y": -80, "All": 0}
+    cut  = cuts[selected]
     if cut != 0:
         gdp      = gdp.iloc[cut:]
         cons     = cons.iloc[cut:]
@@ -235,13 +233,13 @@ def render():
         fig.add_trace(go.Bar(
             name=name, x=quarters, y=series.values,
             marker_color=color,
-            marker_line_color=BG, marker_line_width=0.8,
+            marker_line_color=BG2, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
+    # Diamond line — sin line en marker para evitar error de Plotly
     fig.add_trace(go.Scatter(
         name="Total GDP", x=quarters, y=gdp.values, mode="markers",
-        marker=dict(symbol="diamond", size=7, color="#ffffff",
-                    line=dict(color="#00000060", width=1)),
+        marker=dict(symbol="diamond", size=7, color="#ffffff"),
         hovertemplate="<b>GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
     fig.update_layout(**make_layout(400))
@@ -252,7 +250,7 @@ def render():
     tabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     with tabs[0]:
-        st.markdown('<div class="drill-title">Consumption Components — Durables / Nondurables / Services</div>', unsafe_allow_html=True)
+        st.markdown('<div class="drill-title">Durables / Nondurables / Services</div>', unsafe_allow_html=True)
         _stacked([
             ("Durables",    get_s(df, CODES["durables"]),    COLORS["durables"]),
             ("Nondurables", get_s(df, CODES["nondurables"]), COLORS["nondurables"]),
@@ -260,7 +258,7 @@ def render():
         ], common, quarters)
 
     with tabs[1]:
-        st.markdown('<div class="drill-title">Investment Components — Residential / Nonresidential / Inventories</div>', unsafe_allow_html=True)
+        st.markdown('<div class="drill-title">Residential / Nonresidential / Inventories</div>', unsafe_allow_html=True)
         _stacked([
             ("Residential",    get_s(df, CODES["residential"]),    COLORS["residential"]),
             ("Nonresidential", get_s(df, CODES["nonresidential"]), COLORS["nonresidential"]),
@@ -268,14 +266,14 @@ def render():
         ], common, quarters)
 
     with tabs[2]:
-        st.markdown('<div class="drill-title">Government Components — Federal / State & Local</div>', unsafe_allow_html=True)
+        st.markdown('<div class="drill-title">Federal / State & Local</div>', unsafe_allow_html=True)
         _stacked([
             ("Federal",       get_s(df, CODES["federal"]),     COLORS["federal"]),
             ("State & Local", get_s(df, CODES["state_local"]), COLORS["state_local"]),
         ], common, quarters)
 
     with tabs[3]:
-        st.markdown('<div class="drill-title">Net Exports — Exports / Imports</div>', unsafe_allow_html=True)
+        st.markdown('<div class="drill-title">Exports / Imports</div>', unsafe_allow_html=True)
         _stacked([
             ("Exports", get_s(df, CODES["exports"]), COLORS["exports"]),
             ("Imports", get_s(df, CODES["imports"]), COLORS["imports"]),
@@ -332,7 +330,7 @@ def _stacked(series_list, common, quarters):
         fig.add_trace(go.Bar(
             name=name, x=quarters, y=vals,
             marker_color=color,
-            marker_line_color=BG, marker_line_width=0.8,
+            marker_line_color=BG2, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
     fig.update_layout(**make_layout(300))
