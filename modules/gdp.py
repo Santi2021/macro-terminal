@@ -38,7 +38,7 @@ PLOT_LAYOUT = dict(
     font=dict(family="monospace", color=TEXT, size=11),
     xaxis=dict(gridcolor=GRID, linecolor=GRID, tickfont=dict(color=MUTED)),
     yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True,
-               zerolinecolor="#ffffff30", ticksuffix=" pp"),
+               zerolinecolor="#ffffff30"),
     legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT, size=10),
                 orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     hovermode="x unified",
