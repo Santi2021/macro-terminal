@@ -52,7 +52,7 @@ CODES = {
 
 
 def make_layout(height=400, title=""):
-    return dict(
+    d = dict(
         paper_bgcolor=BG,
         plot_bgcolor=BG2,
         font=dict(color=TEXT, size=11),
@@ -63,14 +63,16 @@ def make_layout(height=400, title=""):
             font=dict(color=TEXT, size=10),
             orientation="h",
             yanchor="bottom", y=1.02,
-            xanchor="left", x=0
+            xanchor="left", x=0,
         ),
         hovermode="x unified",
         barmode="relative",
         height=height,
         margin=dict(l=50, r=20, t=50, b=40),
-        title=dict(text=title, font=dict(color=MUTED, size=11)) if title else None,
     )
+    if title:
+        d["title"] = dict(text=title, font=dict(color=MUTED, size=11))
+    return d
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -171,23 +173,24 @@ def render():
     inv  = inv.reindex(common).fillna(0)
     gov  = gov.reindex(common).fillna(0)
     nx   = nx.reindex(common).fillna(0)
-   quarters = [qlabel(d) for d in common]
+    quarters = [qlabel(d) for d in common]
 
-    # ── Range selector ────────────────────────────────────────────────────────
+    # ── Range selector ─────────────────────────────────────────────────────────
     range_options = {
-        "Últimos 5 años":  -20,
-        "Últimos 10 años": -40,
-        "Desde 2000":      None,
-        "Histórico completo": 0,
+        "5Y":  -20,
+        "10Y": -40,
+        "20Y": -80,
+        "All": 0,
     }
-    selected_range = st.select_slider(
-        "Rango de visualización",
-        options=list(range_options.keys()),
-        value="Últimos 10 años",
-        label_visibility="collapsed",
-    )
-    cut = range_options[selected_range]
-    if cut is not None and cut != 0:
+    col_range, _ = st.columns([2, 8])
+    with col_range:
+        selected = st.radio(
+            "Range", options=list(range_options.keys()),
+            index=1, horizontal=True, label_visibility="collapsed"
+        )
+
+    cut = range_options[selected]
+    if cut != 0:
         gdp      = gdp.iloc[cut:]
         cons     = cons.iloc[cut:]
         inv      = inv.iloc[cut:]
@@ -196,7 +199,7 @@ def render():
         common   = common[cut:]
         quarters = quarters[cut:]
 
-    # ── KPIs ──────────────────────────────────────────────────────────────────
+    # ── KPIs ───────────────────────────────────────────────────────────────────
     latest_gdp = gdp.iloc[-1]
     gdp_color  = "#10b981" if latest_gdp >= 0 else "#ef4444"
 
