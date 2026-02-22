@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import requests
-import os
 
 BG    = "#0d0d1a"
 BG2   = "#13132b"
@@ -15,22 +14,22 @@ TEXT  = "#e8e8f0"
 MUTED = "#6b6b8a"
 
 COLORS = {
-    "consumption":   "#3b82f6",
-    "investment":    "#10b981",
-    "government":    "#f59e0b",
-    "net_exports":   "#ef4444",
-    "durables":      "#60a5fa",
-    "nondurables":   "#93c5fd",
-    "services":      "#1d4ed8",
-    "residential":   "#34d399",
-    "nonresidential":"#6ee7b7",
-    "inventories":   "#064e3b",
-    "federal":       "#fbbf24",
-    "state_local":   "#92400e",
-    "exports":       "#4ade80",
-    "imports":       "#f87171",
-    "final_sales":   "#a78bfa",
-    "inv_change":    "#7c3aed",
+    "consumption":    "#3b82f6",
+    "investment":     "#10b981",
+    "government":     "#f59e0b",
+    "net_exports":    "#ef4444",
+    "durables":       "#60a5fa",
+    "nondurables":    "#93c5fd",
+    "services":       "#1d4ed8",
+    "residential":    "#34d399",
+    "nonresidential": "#6ee7b7",
+    "inventories":    "#064e3b",
+    "federal":        "#fbbf24",
+    "state_local":    "#92400e",
+    "exports":        "#4ade80",
+    "imports":        "#f87171",
+    "final_sales":    "#a78bfa",
+    "inv_change":     "#7c3aed",
 }
 
 PLOT_LAYOUT = dict(
@@ -45,6 +44,27 @@ PLOT_LAYOUT = dict(
     hovermode="x unified",
     margin=dict(l=50, r=20, t=60, b=40),
 )
+
+# ── Correct series codes from T10102 ──────────────────────────────────────────
+# GDP growth rate uses A191RL (Fisher Quantity Index, % change)
+# All contributions use suffix RY (Quantity Contributions)
+CODES = {
+    "gdp":            "A191RL",
+    "consumption":    "DPCERY",
+    "durables":       "DDURRY",
+    "nondurables":    "DNDGRY",
+    "services":       "DSERRY",
+    "investment":     "A006RY",
+    "nonresidential": "A008RY",
+    "residential":    "A011RY",
+    "inventories":    "A014RY",
+    "net_exports":    "A019RY",
+    "exports":        "A020RY",
+    "imports":        "A021RY",
+    "government":     "A822RY",
+    "federal":        "A823RY",
+    "state_local":    "A829RY",
+}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -126,11 +146,11 @@ def render():
         st.error("BEA returned no data.")
         return
 
-    gdp  = get_s(df, "A191RX")
-    cons = get_s(df, "DPCERC")
-    inv  = get_s(df, "A006RC")
-    gov  = get_s(df, "A822RC")
-    nx   = get_s(df, "A019RC")
+    gdp  = get_s(df, CODES["gdp"])
+    cons = get_s(df, CODES["consumption"])
+    inv  = get_s(df, CODES["investment"])
+    gov  = get_s(df, CODES["government"])
+    nx   = get_s(df, CODES["net_exports"])
 
     common = gdp.index
     for s in [cons, inv, gov, nx]:
@@ -150,16 +170,17 @@ def render():
 
     quarters = [qlabel(d) for d in common]
 
+    # ── KPIs ──────────────────────────────────────────────────────────────────
     latest_gdp = gdp.iloc[-1]
     gdp_color  = "#10b981" if latest_gdp >= 0 else "#ef4444"
 
     cols = st.columns(5)
     kpis = [
-        (f"{latest_gdp:+.1f}%", "GDP Growth",   "annualized",       gdp_color),
-        (f"{cons.iloc[-1]:+.1f}", "Consumption", "contribution pp",  COLORS["consumption"]),
-        (f"{inv.iloc[-1]:+.1f}",  "Investment",  "contribution pp",  COLORS["investment"]),
-        (f"{gov.iloc[-1]:+.1f}",  "Government",  "contribution pp",  COLORS["government"]),
-        (f"{nx.iloc[-1]:+.1f}",   "Net Exports", "contribution pp",  COLORS["net_exports"]),
+        (f"{latest_gdp:+.1f}%", "GDP Growth",   "annualized",      gdp_color),
+        (f"{cons.iloc[-1]:+.1f}", "Consumption", "contribution pp", COLORS["consumption"]),
+        (f"{inv.iloc[-1]:+.1f}",  "Investment",  "contribution pp", COLORS["investment"]),
+        (f"{gov.iloc[-1]:+.1f}",  "Government",  "contribution pp", COLORS["government"]),
+        (f"{nx.iloc[-1]:+.1f}",   "Net Exports", "contribution pp", COLORS["net_exports"]),
     ]
     for col, (val, label, sub, color) in zip(cols, kpis):
         with col:
@@ -175,6 +196,7 @@ def render():
         f'Latest: {qlabel(common[-1])} · BEA NIPA T10102 · Annualized contribution to real GDP growth</div>',
         unsafe_allow_html=True)
 
+    # ── Main chart ─────────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Contributions to Real GDP Growth</div>', unsafe_allow_html=True)
 
     fig = go.Figure()
@@ -200,61 +222,63 @@ def render():
     fig.update_layout(**PLOT_LAYOUT, barmode="relative", height=400)
     st.plotly_chart(fig, use_container_width=True)
 
+    # ── Drill-downs ────────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Drill-Down</div>', unsafe_allow_html=True)
 
     tabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     with tabs[0]:
         _stacked([
-            ("Durables",    get_s(df, "DDURRC"), COLORS["durables"]),
-            ("Nondurables", get_s(df, "DNDGRC"), COLORS["nondurables"]),
-            ("Services",    get_s(df, "DSERRC"), COLORS["services"]),
+            ("Durables",    get_s(df, CODES["durables"]),    COLORS["durables"]),
+            ("Nondurables", get_s(df, CODES["nondurables"]), COLORS["nondurables"]),
+            ("Services",    get_s(df, CODES["services"]),    COLORS["services"]),
         ], common, quarters, "Consumption Components")
 
     with tabs[1]:
         _stacked([
-            ("Residential",    get_s(df, "A011RC"), COLORS["residential"]),
-            ("Nonresidential", get_s(df, "A008RC"), COLORS["nonresidential"]),
-            ("Inventories",    get_s(df, "A014RC"), COLORS["inventories"]),
+            ("Residential",    get_s(df, CODES["residential"]),    COLORS["residential"]),
+            ("Nonresidential", get_s(df, CODES["nonresidential"]), COLORS["nonresidential"]),
+            ("Inventories",    get_s(df, CODES["inventories"]),    COLORS["inventories"]),
         ], common, quarters, "Investment Components")
 
     with tabs[2]:
         _stacked([
-            ("Federal",       get_s(df, "A823RC"), COLORS["federal"]),
-            ("State & Local", get_s(df, "A829RC"), COLORS["state_local"]),
+            ("Federal",       get_s(df, CODES["federal"]),      COLORS["federal"]),
+            ("State & Local", get_s(df, CODES["state_local"]),  COLORS["state_local"]),
         ], common, quarters, "Government Components")
 
     with tabs[3]:
         _stacked([
-            ("Exports", get_s(df, "B020RC"), COLORS["exports"]),
-            ("Imports", get_s(df, "B021RC"), COLORS["imports"]),
+            ("Exports", get_s(df, CODES["exports"]), COLORS["exports"]),
+            ("Imports", get_s(df, CODES["imports"]), COLORS["imports"]),
         ], common, quarters, "Net Exports Decomposition")
 
     with tabs[4]:
-        fs = get_s(df, "A180RC").reindex(common).fillna(0)
-        inv_change = gdp - fs
+        inv_change = get_s(df, CODES["inventories"]).reindex(common).fillna(0)
+        final_sales = gdp - inv_change
         _stacked([
-            ("Final Sales",      fs,         COLORS["final_sales"]),
-            ("Inventory Change", inv_change, COLORS["inv_change"]),
+            ("Final Sales",      final_sales, COLORS["final_sales"]),
+            ("Inventory Change", inv_change,  COLORS["inv_change"]),
         ], common, quarters, "Final Sales vs Inventory Investment")
 
+    # ── Heatmap table ──────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Last 8 Quarters</div>', unsafe_allow_html=True)
 
     last8 = common[-8:]
     ql8   = [qlabel(d) for d in last8]
 
     series_map = {
-        "GDP":            get_s(df, "A191RX"),
-        "Consumption":    get_s(df, "DPCERC"),
-        "Durables":       get_s(df, "DDURRC"),
-        "Nondurables":    get_s(df, "DNDGRC"),
-        "Services":       get_s(df, "DSERRC"),
-        "Investment":     get_s(df, "A006RC"),
-        "Residential":    get_s(df, "A011RC"),
-        "Nonresidential": get_s(df, "A008RC"),
-        "Inventories":    get_s(df, "A014RC"),
-        "Government":     get_s(df, "A822RC"),
-        "Net Exports":    get_s(df, "A019RC"),
+        "GDP":            get_s(df, CODES["gdp"]),
+        "Consumption":    get_s(df, CODES["consumption"]),
+        "Durables":       get_s(df, CODES["durables"]),
+        "Nondurables":    get_s(df, CODES["nondurables"]),
+        "Services":       get_s(df, CODES["services"]),
+        "Investment":     get_s(df, CODES["investment"]),
+        "Residential":    get_s(df, CODES["residential"]),
+        "Nonresidential": get_s(df, CODES["nonresidential"]),
+        "Inventories":    get_s(df, CODES["inventories"]),
+        "Government":     get_s(df, CODES["government"]),
+        "Net Exports":    get_s(df, CODES["net_exports"]),
     }
 
     rows = {label: s.reindex(last8).fillna(0).values for label, s in series_map.items()}
