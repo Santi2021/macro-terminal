@@ -171,7 +171,30 @@ def render():
     inv  = inv.reindex(common).fillna(0)
     gov  = gov.reindex(common).fillna(0)
     nx   = nx.reindex(common).fillna(0)
-    quarters = [qlabel(d) for d in common]
+   quarters = [qlabel(d) for d in common]
+
+    # ── Range selector ────────────────────────────────────────────────────────
+    range_options = {
+        "Últimos 5 años":  -20,
+        "Últimos 10 años": -40,
+        "Desde 2000":      None,
+        "Histórico completo": 0,
+    }
+    selected_range = st.select_slider(
+        "Rango de visualización",
+        options=list(range_options.keys()),
+        value="Últimos 10 años",
+        label_visibility="collapsed",
+    )
+    cut = range_options[selected_range]
+    if cut is not None and cut != 0:
+        gdp      = gdp.iloc[cut:]
+        cons     = cons.iloc[cut:]
+        inv      = inv.iloc[cut:]
+        gov      = gov.iloc[cut:]
+        nx       = nx.iloc[cut:]
+        common   = common[cut:]
+        quarters = quarters[cut:]
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
     latest_gdp = gdp.iloc[-1]
