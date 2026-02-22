@@ -68,10 +68,10 @@ def make_layout(height=400, title=""):
         hovermode="x unified",
         barmode="relative",
         height=height,
-        margin=dict(l=50, r=20, t=50, b=40),
+        margin=dict(l=50, r=20, t=60, b=40),
     )
     if title:
-        d["title"] = dict(text=title, font=dict(color=MUTED, size=11))
+        d["title"] = dict(text=title, font=dict(color=MUTED, size=11), x=0, pad=dict(b=20))
     return d
 
 
@@ -138,6 +138,10 @@ def render():
     .kpi-sub   { font-family:monospace; font-size:0.8rem; margin-top:4px; color:#6b6b8a; }
     .sec { font-family:monospace; font-size:0.68rem; color:#6b6b8a; text-transform:uppercase;
            letter-spacing:0.15em; margin:24px 0 8px 0; border-bottom:1px solid #1e1e3a; padding-bottom:6px; }
+    .drill-title { font-family:monospace; font-size:0.78rem; color:#9999bb;
+                   margin: 12px 0 4px 0; padding: 6px 0; }
+    /* Radio horizontal en una sola fila */
+    div[role="radiogroup"] { flex-direction: row !important; gap: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -175,19 +179,12 @@ def render():
     nx   = nx.reindex(common).fillna(0)
     quarters = [qlabel(d) for d in common]
 
-    # ── Range selector ─────────────────────────────────────────────────────────
-    range_options = {
-        "5Y":  -20,
-        "10Y": -40,
-        "20Y": -80,
-        "All": 0,
-    }
-    col_range, _ = st.columns([2, 8])
-    with col_range:
-        selected = st.radio(
-            "Range", options=list(range_options.keys()),
-            index=1, horizontal=True, label_visibility="collapsed"
-        )
+    # ── Range selector — una sola fila ─────────────────────────────────────────
+    range_options = {"5Y": -20, "10Y": -40, "20Y": -80, "All": 0}
+    selected = st.radio(
+        "Range", options=list(range_options.keys()),
+        index=1, horizontal=True, label_visibility="collapsed"
+    )
 
     cut = range_options[selected]
     if cut != 0:
@@ -237,12 +234,14 @@ def render():
     ]:
         fig.add_trace(go.Bar(
             name=name, x=quarters, y=series.values,
-            marker_color=color, marker_line_width=0,
+            marker_color=color,
+            marker_line_color=BG, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
     fig.add_trace(go.Scatter(
         name="Total GDP", x=quarters, y=gdp.values, mode="markers",
-        marker=dict(symbol="diamond", size=8, color="#ffffff", line=dict(color=BG2, width=1)),
+        marker=dict(symbol="diamond", size=7, color="#ffffff",
+                    line=dict(color="#00000060", width=1)),
         hovertemplate="<b>GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
     fig.update_layout(**make_layout(400))
@@ -253,38 +252,43 @@ def render():
     tabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     with tabs[0]:
+        st.markdown('<div class="drill-title">Consumption Components — Durables / Nondurables / Services</div>', unsafe_allow_html=True)
         _stacked([
             ("Durables",    get_s(df, CODES["durables"]),    COLORS["durables"]),
             ("Nondurables", get_s(df, CODES["nondurables"]), COLORS["nondurables"]),
             ("Services",    get_s(df, CODES["services"]),    COLORS["services"]),
-        ], common, quarters, "Consumption Components")
+        ], common, quarters)
 
     with tabs[1]:
+        st.markdown('<div class="drill-title">Investment Components — Residential / Nonresidential / Inventories</div>', unsafe_allow_html=True)
         _stacked([
             ("Residential",    get_s(df, CODES["residential"]),    COLORS["residential"]),
             ("Nonresidential", get_s(df, CODES["nonresidential"]), COLORS["nonresidential"]),
             ("Inventories",    get_s(df, CODES["inventories"]),    COLORS["inventories"]),
-        ], common, quarters, "Investment Components")
+        ], common, quarters)
 
     with tabs[2]:
+        st.markdown('<div class="drill-title">Government Components — Federal / State & Local</div>', unsafe_allow_html=True)
         _stacked([
             ("Federal",       get_s(df, CODES["federal"]),     COLORS["federal"]),
             ("State & Local", get_s(df, CODES["state_local"]), COLORS["state_local"]),
-        ], common, quarters, "Government Components")
+        ], common, quarters)
 
     with tabs[3]:
+        st.markdown('<div class="drill-title">Net Exports — Exports / Imports</div>', unsafe_allow_html=True)
         _stacked([
             ("Exports", get_s(df, CODES["exports"]), COLORS["exports"]),
             ("Imports", get_s(df, CODES["imports"]), COLORS["imports"]),
-        ], common, quarters, "Net Exports Decomposition")
+        ], common, quarters)
 
     with tabs[4]:
+        st.markdown('<div class="drill-title">Final Sales vs Inventory Investment</div>', unsafe_allow_html=True)
         inv_ch = get_s(df, CODES["inventories"]).reindex(common).fillna(0)
         fs     = gdp - inv_ch
         _stacked([
             ("Final Sales",      fs,     COLORS["final_sales"]),
             ("Inventory Change", inv_ch, COLORS["inv_change"]),
-        ], common, quarters, "Final Sales vs Inventory Investment")
+        ], common, quarters)
 
     # ── Heatmap table ──────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Last 8 Quarters</div>', unsafe_allow_html=True)
@@ -321,14 +325,15 @@ def render():
     st.dataframe(styled, use_container_width=True)
 
 
-def _stacked(series_list, common, quarters, title):
+def _stacked(series_list, common, quarters):
     fig = go.Figure()
     for name, s, color in series_list:
         vals = s.reindex(common).fillna(0).values
         fig.add_trace(go.Bar(
             name=name, x=quarters, y=vals,
-            marker_color=color, marker_line_width=0,
+            marker_color=color,
+            marker_line_color=BG, marker_line_width=0.8,
             hovertemplate=f"<b>{name}</b>: %{{y:+.2f}} pp<extra></extra>",
         ))
-    fig.update_layout(**make_layout(320, title))
+    fig.update_layout(**make_layout(300))
     st.plotly_chart(fig, use_container_width=True)
