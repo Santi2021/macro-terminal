@@ -74,10 +74,6 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
 [data-testid="stSidebar"] .stRadio > div { gap: 0; }
 [data-testid="stSidebar"] .stRadio [data-testid="stWidgetLabel"] { display: none; }
 hr { border-color: #1e1e3a; }
-section[data-testid="stSidebar"] { min-width: 220px !important; max-width: 220px !important; }
-[data-testid="stSidebarCollapsedControl"] { display: none !important; }
-[data-testid="stSidebarNavCollapseIcon"] { display: none !important; }
-button[kind="header"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
