@@ -75,8 +75,7 @@ FRED_SERIES = {
     "jolts_openings":   "JTSJOL",    # Job Openings, thousands
     "jolts_hires":      "JTSHIL",    # Hires
     "jolts_quits":      "JTSQUL",    # Quits
-    "jolts_layoffs":    "JTSLAL",    # Layoffs & Discharges
-    "jolts_separations":"JTSSEL",    # Total Separations
+    "jolts_layoffs":    "JTSLDL",    # Layoffs & Discharges
 }
 
 
@@ -441,13 +440,11 @@ def render():
     hires      = get_s(fred, "jolts_hires")
     quits      = get_s(fred, "jolts_quits")
     layoffs    = get_s(fred, "jolts_layoffs")
-    separations= get_s(fred, "jolts_separations")
 
     op_t   = trim(openings)
     hi_t   = trim(hires)
     qu_t   = trim(quits)
     lay_t  = trim(layoffs)
-    sep_t  = trim(separations)
 
     jolts_tabs = st.tabs(["Beveridge Curve", "Flows (Hires/Quits/Layoffs)", "Openings vs Unemployment"])
 
