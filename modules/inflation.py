@@ -49,28 +49,16 @@ FRED_INFL = {
     "mich_5y":       "EXPINF5YR",
 }
 
-COMPONENT_LABELS = {
-    "cpi_shelter":   "Shelter",
-    "cpi_food_home": "Food at Home",
-    "cpi_food_out":  "Food Away from Home",
-    "cpi_medical":   "Medical Care",
-    "cpi_energy":    "Energy",
-    "cpi_gasoline":  "Gasoline",
-    "cpi_new_cars":  "New Vehicles",
-    "cpi_used_cars": "Used Vehicles",
-    "cpi_apparel":   "Apparel",
-}
-
-COMPONENT_COLORS = {
-    "Shelter":              "#3b82f6",
-    "Food at Home":         "#10b981",
-    "Food Away from Home":  "#34d399",
-    "Medical Care":         "#a78bfa",
-    "Energy":               "#f59e0b",
-    "Gasoline":             "#fbbf24",
-    "New Vehicles":         "#94a3b8",
-    "Used Vehicles":        "#64748b",
-    "Apparel":              "#f97316",
+# Component metadata: label, weight (BLS Relative Importance 2024), color
+COMPONENTS = {
+    "cpi_shelter":   ("Shelter",             0.3620, "#3b82f6"),
+    "cpi_food_home": ("Food at Home",        0.0850, "#10b981"),
+    "cpi_food_out":  ("Food Away from Home", 0.0540, "#34d399"),
+    "cpi_medical":   ("Medical Care",        0.0640, "#a78bfa"),
+    "cpi_energy":    ("Energy",              0.0640, "#f59e0b"),
+    "cpi_new_cars":  ("New Vehicles",        0.0340, "#94a3b8"),
+    "cpi_used_cars": ("Used Vehicles",       0.0230, "#64748b"),
+    "cpi_apparel":   ("Apparel",             0.0240, "#f97316"),
 }
 
 # ── API helpers ────────────────────────────────────────────────────────────────
@@ -275,44 +263,91 @@ def render():
     fig.update_layout(**base_layout(360))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── Section 2: CPI Component Breakdown ────────────────────────────────────
-    st.markdown('<div class="sec">CPI Components — Latest Month YoY % Contribution</div>', unsafe_allow_html=True)
+    # ── Section 2: CPI Contributions Stacked Bar (Bloomberg/Truflation style) ──
+    st.markdown('<div class="sec">CPI Contributions to Inflation — pp (Bloomberg style)</div>', unsafe_allow_html=True)
 
-    comp_vals = {}
-    for key, label in COMPONENT_LABELS.items():
-        s = yoy(get_s(cpi, BLS_CPI[key]))
-        if len(s.dropna()) > 0:
-            comp_vals[label] = s.dropna().iloc[-1]
+    # Toggle MoM vs YoY
+    col_t, _ = st.columns([3, 7])
+    with col_t:
+        mode = st.radio("Mode", ["YoY %", "MoM %"],
+                        horizontal=True, label_visibility="collapsed", key="infl_contrib_mode")
 
-    comp_df = pd.DataFrame.from_dict(comp_vals, orient="index", columns=["yoy"]).sort_values("yoy")
-    bar_colors = [COMPONENT_COLORS.get(k, CYAN) for k in comp_df.index]
+    # Build contributions DataFrame for all periods
+    contrib_data = {}
+    raw_index = {}
+    for key, (label, weight, color) in COMPONENTS.items():
+        s = get_s(cpi, BLS_CPI[key])
+        if len(s.dropna()) < 13:
+            continue
+        if mode == "YoY %":
+            # Contribution = weight * (index_t / index_t-12 - 1) * 100
+            contrib = s.pct_change(12) * 100 * weight
+        else:
+            # MoM contribution
+            contrib = s.pct_change(1) * 100 * weight
+        contrib_data[label] = contrib
+        raw_index[label] = (s, weight, color)
 
+    contrib_df = pd.DataFrame(contrib_data).dropna()
+    contrib_df = trim(contrib_df)
+
+    # Total line (actual CPI YoY or MoM)
+    if mode == "YoY %":
+        total = trim(yoy(get_s(cpi, BLS_CPI["cpi_all"])))
+    else:
+        total = trim(get_s(cpi, BLS_CPI["cpi_all"]).pct_change(1) * 100)
+
+    # Build stacked bar chart
     fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        x=comp_df["yoy"], y=comp_df.index,
-        orientation="h",
-        marker_color=bar_colors,
-        hovertemplate="<b>%{y}</b>: %{x:+.2f}% YoY<extra></extra>",
-    ))
-    fig2.add_vline(x=0, line_color="#444466", line_width=1)
-    fig2.add_vline(x=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot")
+    for label, (_, weight, color) in COMPONENTS.items():
+        if label not in contrib_df.columns:
+            continue
+        vals = contrib_df[label]
+        fig2.add_trace(go.Bar(
+            name=label,
+            x=contrib_df.index,
+            y=vals.values,
+            marker_color=color,
+            marker_line_width=0,
+            hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
+        ))
 
-    layout2 = base_layout(360)
-    layout2["xaxis"]["title"] = dict(text="YoY %")
-    layout2["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
-    layout2["margin"]["l"] = 170
+    # Total line on top
+    common = contrib_df.index.intersection(total.index)
+    fig2.add_trace(go.Scatter(
+        name="CPI Total",
+        x=common,
+        y=total.reindex(common).values,
+        mode="lines",
+        line=dict(color="#ffffff", width=2),
+        hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
+    ))
+
+    fig2.add_hline(y=0, line_color="#444466", line_width=1)
+    fig2.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot",
+                   annotation_text="2% target", annotation_position="top right",
+                   annotation_font=dict(color=GREEN, size=9))
+
+    layout2 = base_layout(400)
+    layout2["barmode"] = "relative"
+    layout2["yaxis"]["title"] = dict(text="pp contribution")
     fig2.update_layout(**layout2)
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Insight
-    shelter_val = comp_vals.get("Shelter", 0)
-    energy_val  = comp_vals.get("Energy", 0)
-    st.markdown(
-        f'<div class="insight">🏠 Shelter YoY: <b style="color:{BLUE}">{shelter_val:.1f}%</b> — '
-        f'tiene lag de 12-18 meses respecto al mercado inmobiliario real. '
-        f'Core ex-Shelter es la métrica más limpia de inflación subyacente. '
-        f'⛽ Energy: <b style="color:{AMBER}">{energy_val:.1f}%</b></div>',
-        unsafe_allow_html=True)
+    # Insight dinámico basado en mayor contribuidor
+    if len(contrib_df) > 0:
+        latest_contribs = contrib_df.iloc[-1].sort_values(ascending=False)
+        top = latest_contribs.index[0]
+        top_val = latest_contribs.iloc[0]
+        shelter_contrib = contrib_df["Shelter"].iloc[-1] if "Shelter" in contrib_df else 0
+        energy_contrib  = contrib_df["Energy"].iloc[-1]  if "Energy"  in contrib_df else 0
+        st.markdown(
+            f'<div class="insight">📊 Mayor contribuidor: <b style="color:#e8e8f0">{top}</b> ' 
+            f'(<b style="color:{CYAN}">{top_val:+.3f}pp</b>). '
+            f'🏠 Shelter: <b style="color:{BLUE}">{shelter_contrib:+.3f}pp</b> — ' 
+            f'lag 12-18 meses del mercado inmobiliario. '
+            f'⛽ Energy: <b style="color:{AMBER}">{energy_contrib:+.3f}pp</b></div>',
+            unsafe_allow_html=True)
 
     # ── Section 3: Shelter vs Core ex-Shelter ─────────────────────────────────
     st.markdown('<div class="sec">Shelter vs Core ex-Shelter — YoY %</div>', unsafe_allow_html=True)
@@ -419,7 +454,7 @@ def render():
     st.markdown('<div class="sec">CPI Components Heatmap — Last 6 Months YoY %</div>', unsafe_allow_html=True)
 
     heat = {}
-    for key, label in COMPONENT_LABELS.items():
+    for key, (label, weight, color) in COMPONENTS.items():
         s = yoy(get_s(cpi, BLS_CPI[key]))
         if len(s.dropna()) >= 6:
             heat[label] = s.dropna().iloc[-6:]
