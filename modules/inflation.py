@@ -361,7 +361,7 @@ def render():
         bargap=0.15,
         height=480,
         paper_bgcolor=BG,
-        plot_bgcolor=BG,
+        plot_bgcolor=BG2,
         font=dict(color=TEXT, family="monospace", size=11),
         hovermode="x unified",
         margin=dict(l=55, r=20, t=100, b=40),
