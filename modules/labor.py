@@ -372,7 +372,7 @@ def render():
     fig2.add_vline(x=0, line_color="#444466", line_width=1)
     layout2 = base_layout(420)
     layout2["xaxis"]["title"] = dict(text="Thousands")
-    layout2["yaxis"]["gridcolor"] = "transparent"
+    layout2["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
     layout2["margin"]["l"] = 160
     fig2.update_layout(**layout2)
     st.plotly_chart(fig2, use_container_width=True)
@@ -402,7 +402,7 @@ def render():
     fig3.update_yaxes(title_text="Unemployment %", gridcolor=GRID, linecolor=GRID,
                       zeroline=False, secondary_y=False,
                       title_font=dict(color=RED, size=10))
-    fig3.update_yaxes(title_text="Participation %", gridcolor="transparent",
+    fig3.update_yaxes(title_text="Participation %", gridcolor="rgba(0,0,0,0)",
                       zeroline=False, secondary_y=True,
                       title_font=dict(color=CYAN, size=10))
     fig3.update_xaxes(gridcolor=GRID, linecolor=GRID)
@@ -567,7 +567,7 @@ def render():
         fig_ov.update_yaxes(title_text="Job Openings (M)", gridcolor=GRID, linecolor=GRID,
                             zeroline=False, secondary_y=False,
                             title_font=dict(color=CYAN, size=10))
-        fig_ov.update_yaxes(title_text="Unemployment %", gridcolor="transparent",
+        fig_ov.update_yaxes(title_text="Unemployment %", gridcolor="rgba(0,0,0,0)",
                             zeroline=False, secondary_y=True,
                             title_font=dict(color=RED, size=10))
         fig_ov.update_xaxes(gridcolor=GRID, linecolor=GRID)
