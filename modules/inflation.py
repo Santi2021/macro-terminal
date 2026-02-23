@@ -168,7 +168,7 @@ def base_layout(height=360, title=""):
     return layout
 
 
-
+# ── Main render ────────────────────────────────────────────────────────────────
 def render():
     st.markdown("""
     <style>
@@ -191,7 +191,7 @@ def render():
     col_r, _ = st.columns([3, 7])
     with col_r:
         rng = st.radio("Range", ["2Y", "5Y", "10Y", "All"],
-                       index=1, horizontal=True, label_visibility="collapsed")
+                       index=1, horizontal=True, label_visibility="collapsed", key="inflation_range")
     cuts = {"2Y": -24, "5Y": -60, "10Y": -120, "All": 0}
     cut  = cuts[rng]
 
