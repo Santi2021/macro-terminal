@@ -288,36 +288,39 @@ def render():
         contrib_data[label] = contrib
         raw_index[label] = (s, weight, color)
 
-    contrib_df = pd.DataFrame(contrib_data).dropna()
+    contrib_df = pd.DataFrame(contrib_data)
+    contrib_df = contrib_df.dropna()
     contrib_df = trim(contrib_df)
+    # Convert index to strings for Plotly bar alignment
+    contrib_df.index = [d.strftime("%b %Y") for d in contrib_df.index]
 
     # Total line (actual CPI YoY or MoM)
     if mode == "YoY %":
         total = trim(yoy(get_s(cpi, BLS_CPI["cpi_all"])))
     else:
         total = trim(get_s(cpi, BLS_CPI["cpi_all"]).pct_change(1) * 100)
+    total.index = [d.strftime("%b %Y") for d in total.index]
 
     # Build stacked bar chart
     fig2 = go.Figure()
     for label, (_, weight, color) in COMPONENTS.items():
         if label not in contrib_df.columns:
             continue
-        vals = contrib_df[label]
         fig2.add_trace(go.Bar(
             name=label,
             x=contrib_df.index,
-            y=vals.values,
+            y=contrib_df[label].values,
             marker_color=color,
             marker_line_width=0,
             hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
         ))
 
-    # Total line on top
-    common = contrib_df.index.intersection(total.index)
+    # Total line on top — same string index
+    common = [d for d in contrib_df.index if d in total.index]
     fig2.add_trace(go.Scatter(
         name="CPI Total",
         x=common,
-        y=total.reindex(common).values,
+        y=[total[d] for d in common],
         mode="lines",
         line=dict(color="#ffffff", width=2),
         hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
