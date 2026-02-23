@@ -302,37 +302,63 @@ def render():
         contrib_data[label] = contrib
         raw_index[label] = (s, weight, color)
 
-    contrib_df = pd.DataFrame(contrib_data)
-    contrib_df = contrib_df.dropna()
+    contrib_df = pd.DataFrame(contrib_data).dropna()
     contrib_df = trim(contrib_df)
-    # Convert index to strings for Plotly bar alignment
-    contrib_df.index = [d.strftime("%b %Y") for d in contrib_df.index]
 
-    # Total line (actual CPI YoY or MoM)
+    # Total line
     if mode == "YoY %":
         total = trim(yoy(get_s(cpi, BLS_CPI["cpi_all"])))
     else:
         total = trim(get_s(cpi, BLS_CPI["cpi_all"]).pct_change(1) * 100)
-    total.index = [d.strftime("%b %Y") for d in total.index]
 
-    # Build stacked bar chart
+    # Align
+    common_idx = contrib_df.index.intersection(total.index)
+    contrib_df  = contrib_df.reindex(common_idx)
+    total       = total.reindex(common_idx)
+
+    # Build stacked bar using Scatter with fill — 100% compatible with Streamlit
     fig2 = go.Figure()
-    for label, (_, weight, color) in COMPONENTS.items():
-        if label not in contrib_df.columns:
-            continue
-        fig2.add_trace(go.Bar(
-            name=label,
-            x=contrib_df.index,
-            y=contrib_df[label].values,
-            marker=dict(color=color, opacity=1.0),
-            marker_line_width=0,
-            hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
-        ))
+    labels   = [k for k, (lbl,_,__) in COMPONENTS.items() if lbl in contrib_df.columns]
+    cols     = [lbl for k,(lbl,_,__)  in COMPONENTS.items() if lbl in contrib_df.columns]
+    colors   = [c   for k,(_,__,c)   in COMPONENTS.items() if _ in contrib_df.columns]
+
+    # Compute cumulative positive and negative stacks separately
+    pos_stack = pd.Series(0.0, index=common_idx)
+    neg_stack = pd.Series(0.0, index=common_idx)
+
+    for label, color in zip(cols, colors):
+        vals = contrib_df[label]
+        pos_vals = vals.clip(lower=0)
+        neg_vals = vals.clip(upper=0)
+
+        if pos_vals.abs().sum() > 0:
+            fig2.add_trace(go.Bar(
+                name=label,
+                x=common_idx,
+                y=pos_vals.values,
+                base=pos_stack.values,
+                marker=dict(color=color, line=dict(width=0)),
+                showlegend=True,
+                hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
+            ))
+            pos_stack += pos_vals
+
+        if neg_vals.abs().sum() > 0:
+            fig2.add_trace(go.Bar(
+                name=label,
+                x=common_idx,
+                y=neg_vals.values,
+                base=neg_stack.values,
+                marker=dict(color=color, line=dict(width=0)),
+                showlegend=False,
+                hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
+            ))
+            neg_stack += neg_vals
 
     # Total line on top
     fig2.add_trace(go.Scatter(
         name="CPI Total",
-        x=total.index,
+        x=common_idx,
         y=total.values,
         mode="lines",
         line=dict(color="#ffffff", width=2),
@@ -357,7 +383,7 @@ def render():
     )
 
     fig2.update_layout(
-        barmode="relative",
+        barmode="overlay",
         bargap=0.15,
         height=480,
         paper_bgcolor=BG,
