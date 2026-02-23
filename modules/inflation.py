@@ -38,6 +38,13 @@ BLS_CPI = {
     "cpi_apparel":   "CUUR0000SAA",
     "cpi_new_cars":  "CUUR0000SAT1",
     "cpi_used_cars": "CUUR0000SETA02",
+    "cpi_recreation":"CUUR0000SAR",
+    "cpi_education": "CUUR0000SAE1",
+    "cpi_comm":      "CUUR0000SACE",
+    "cpi_alcohol":   "CUUR0000SAG1",
+    "cpi_furnish":   "CUUR0000SEHF",
+    "cpi_hhops":     "CUUR0000SAH2",
+    "cpi_transp":    "CUUR0000SAT",
 }
 
 FRED_INFL = {
@@ -59,6 +66,13 @@ COMPONENTS = {
     "cpi_new_cars":  ("New Vehicles",        0.0340, "#94a3b8"),
     "cpi_used_cars": ("Used Vehicles",       0.0230, "#64748b"),
     "cpi_apparel":   ("Apparel",             0.0240, "#f97316"),
+    "cpi_recreation":("Recreation",          0.0570, "#06b6d4"),
+    "cpi_education": ("Education",           0.0330, "#8b5cf6"),
+    "cpi_comm":      ("Communication",       0.0360, "#ec4899"),
+    "cpi_alcohol":   ("Alcoholic Beverages", 0.0090, "#84cc16"),
+    "cpi_furnish":   ("Household Furnishings",0.0440,"#0891b2"),
+    "cpi_hhops":     ("Household Operations",0.0310,"#0e7490"),
+    "cpi_transp":    ("Transport Services",  0.0590, "#7c3aed"),
 }
 
 # ── API helpers ────────────────────────────────────────────────────────────────
@@ -315,26 +329,56 @@ def render():
             hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
         ))
 
-    # Total line on top — same string index
-    common = [d for d in contrib_df.index if d in total.index]
+    # Total line on top
     fig2.add_trace(go.Scatter(
         name="CPI Total",
-        x=common,
-        y=[total[d] for d in common],
+        x=total.index,
+        y=total.values,
         mode="lines",
         line=dict(color="#ffffff", width=2),
         hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
     ))
 
-    fig2.add_hline(y=0, line_color="#444466", line_width=1)
+    fig2.add_hline(y=0, line_color="#2a2a4a", line_width=1)
     fig2.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot",
                    annotation_text="2% target", annotation_position="top right",
                    annotation_font=dict(color=GREEN, size=9))
 
-    layout2 = base_layout(400)
-    layout2["barmode"] = "relative"
-    layout2["yaxis"]["title"] = dict(text="pp contribution")
-    fig2.update_layout(**layout2)
+    # Shutdown annotation
+    fig2.add_vline(x="2025-10-01", line_color=RED, line_width=1, line_dash="dot")
+    fig2.add_annotation(
+        x="2025-10-01", y=1.0, yref="paper",
+        text="Oct '25<br>Shutdown",
+        showarrow=False,
+        font=dict(color=RED, size=9, family="monospace"),
+        xanchor="left",
+        bgcolor="rgba(13,13,26,0.8)",
+        bordercolor=RED, borderwidth=1, borderpad=3,
+    )
+
+    fig2.update_layout(
+        barmode="relative",
+        bargap=0.15,
+        height=480,
+        paper_bgcolor=BG,
+        plot_bgcolor=BG,
+        font=dict(color=TEXT, family="monospace", size=11),
+        hovermode="x unified",
+        margin=dict(l=55, r=20, t=100, b=40),
+        legend=dict(
+            orientation="h", y=1.18, x=0, xanchor="left",
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color=MUTED),
+            itemsizing="constant",
+        ),
+        xaxis=dict(showgrid=False, linecolor=GRID, tickcolor=GRID, tickfont=dict(color=MUTED)),
+        yaxis=dict(
+            showgrid=True, gridcolor="#1a1a2e", gridwidth=0.5,
+            zeroline=True, zerolinecolor="#2a2a4a", zerolinewidth=1,
+            tickfont=dict(color=MUTED), ticksuffix="pp",
+            title=dict(text="pp contribution"),
+        ),
+    )
     st.plotly_chart(fig2, use_container_width=True)
 
     # Insight dinámico basado en mayor contribuidor
