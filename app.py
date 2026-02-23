@@ -101,7 +101,7 @@ st.markdown("""
 MODULES = [
     ("📊  GDP & Components",   "gdp",       True),
     ("👷  Labor Market",       "labor",     True),
-    ("📈  Inflation",          "inflation", False),
+    ("📈  Inflation",          "inflation", True),
     ("🏢  Corporate Health",   "corporate", False),
     ("📡  Leading Indicators", "leading",   False),
 ]
