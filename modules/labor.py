@@ -371,7 +371,7 @@ def render():
     ))
     fig2.add_vline(x=0, line_color="#444466", line_width=1)
     layout2 = base_layout(420)
-    layout2["xaxis"]["title"] = "Thousands"
+    layout2["xaxis"]["title"] = dict(text="Thousands")
     layout2["yaxis"]["gridcolor"] = "transparent"
     layout2["margin"]["l"] = 160
     fig2.update_layout(**layout2)
@@ -497,8 +497,8 @@ def render():
             ))
 
             layout_bev = base_layout(400, "Job Openings (M) vs Unemployment Rate (%)")
-            layout_bev["xaxis"]["title"] = "Unemployment Rate (%)"
-            layout_bev["yaxis"]["title"] = "Job Openings (M)"
+            layout_bev["xaxis"]["title"] = dict(text="Unemployment Rate (%)")
+            layout_bev["yaxis"]["title"] = dict(text="Job Openings (M)")
             layout_bev["hovermode"] = "closest"
             layout_bev["showlegend"] = False
             fig_bev.update_layout(**layout_bev)
@@ -530,7 +530,7 @@ def render():
             ))
 
         layout_fl = base_layout(340, "JOLTS Flows (Millions)")
-        layout_fl["yaxis"]["title"] = "Millions"
+        layout_fl["yaxis"]["title"] = dict(text="Millions")
         fig_fl.update_layout(**layout_fl)
         st.plotly_chart(fig_fl, use_container_width=True)
 
