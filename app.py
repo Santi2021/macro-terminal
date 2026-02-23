@@ -18,6 +18,8 @@ st.markdown("""
 html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
 .stApp { background-color: #0d0d1a; color: #e8e8f0; }
 #MainMenu, footer, header { visibility: hidden; }
+[data-testid="collapsedControl"] { display: flex !important; visibility: visible !important; }
+section[data-testid="stSidebar"] { display: flex !important; visibility: visible !important; }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 
 [data-testid="stSidebar"] {
