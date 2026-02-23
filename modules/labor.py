@@ -179,10 +179,9 @@ def yoy_pct(series: pd.Series) -> pd.Series:
 
 # ── Layout helper ──────────────────────────────────────────────────────────────
 def base_layout(height=360, title=""):
-    return dict(
+    layout = dict(
         paper_bgcolor=BG, plot_bgcolor=BG2,
         font=dict(color=TEXT, size=11),
-        title=dict(text=title, font=dict(size=12, color=MUTED), x=0, xanchor="left") if title else None,
         xaxis=dict(gridcolor=GRID, linecolor=GRID, showgrid=False),
         yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True, zerolinecolor="#444466"),
         hovermode="x unified",
@@ -193,6 +192,9 @@ def base_layout(height=360, title=""):
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
         ),
     )
+    if title:
+        layout["title"] = dict(text=title, font=dict(size=12, color=MUTED), x=0, xanchor="left")
+    return layout
 
 
 # ── Main render ────────────────────────────────────────────────────────────────
