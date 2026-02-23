@@ -130,3 +130,6 @@ for tab, (label, module_name, is_live) in zip(tabs, MODULES):
         elif module_name == "labor":
             from modules.labor import render as render_labor
             render_labor()
+        elif module_name == "inflation":
+            from modules.inflation import render as render_inflation
+            render_inflation()
