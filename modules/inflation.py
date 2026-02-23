@@ -324,7 +324,7 @@ def render():
             name=label,
             x=contrib_df.index,
             y=contrib_df[label].values,
-            marker_color=color,
+            marker=dict(color=color, opacity=1.0),
             marker_line_width=0,
             hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
         ))
