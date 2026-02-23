@@ -64,6 +64,10 @@ BLS_SERIES = {
     "sec_edu_health":    "CES6500000001",
     "sec_leisure":       "CES7000000001",
     "sec_other":         "CES8000000001",
+    # Government breakdown
+    "sec_govt_federal":  "CES9091000001",
+    "sec_govt_state":    "CES9092000001",
+    "sec_govt_local":    "CES9093000001",
 }
 
 # JOLTS from FRED
@@ -337,12 +341,10 @@ def render():
     st.markdown('<div class="sec">Sector Payrolls — Latest Month Change (000s)</div>', unsafe_allow_html=True)
 
     sector_map = {
-        "Total Private":            BLS_SERIES["payrolls_private"],
-        "Goods-producing":          BLS_SERIES["sec_goods"],
+        # Private sectors (pure components only)
         "Mining & Logging":         BLS_SERIES["sec_mining"],
         "Construction":             BLS_SERIES["sec_construction"],
         "Manufacturing":            BLS_SERIES["sec_manufacturing"],
-        "Service-providing":        BLS_SERIES["sec_services"],
         "Trade, Transport & Util.": BLS_SERIES["sec_trade_trans"],
         "Information":              BLS_SERIES["sec_information"],
         "Financial Activities":     BLS_SERIES["sec_financial"],
@@ -350,7 +352,10 @@ def render():
         "Education & Health":       BLS_SERIES["sec_edu_health"],
         "Leisure & Hospitality":    BLS_SERIES["sec_leisure"],
         "Other Services":           BLS_SERIES["sec_other"],
-        "Government":               BLS_SERIES["payrolls_govt"],
+        # Government — desagregado
+        "Govt: Federal":            BLS_SERIES["sec_govt_federal"],
+        "Govt: State":              BLS_SERIES["sec_govt_state"],
+        "Govt: Local":              BLS_SERIES["sec_govt_local"],
     }
 
     sector_vals = {}
@@ -370,10 +375,10 @@ def render():
         hovertemplate="<b>%{y}</b>: %{x:+,.0f}K<extra></extra>",
     ))
     fig2.add_vline(x=0, line_color="#444466", line_width=1)
-    layout2 = base_layout(420)
+    layout2 = base_layout(480)
     layout2["xaxis"]["title"] = dict(text="Thousands")
     layout2["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
-    layout2["margin"]["l"] = 160
+    layout2["margin"]["l"] = 180
     fig2.update_layout(**layout2)
     st.plotly_chart(fig2, use_container_width=True)
 
