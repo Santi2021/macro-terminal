@@ -169,6 +169,25 @@ def base_layout(height=360, title=""):
 
 
 # ── Main render ────────────────────────────────────────────────────────────────
+# TEST - pegá esto temporalmente al inicio de render() en inflation.py
+def render():
+    st.write("✅ render() called")
+    
+    try:
+        cpi = load_cpi_data()
+        st.write(f"✅ CPI loaded: {len(cpi)} rows")
+    except Exception as e:
+        st.error(f"❌ CPI error: {e}")
+        return
+
+    try:
+        fred = load_fred_data()
+        st.write(f"✅ FRED loaded: {len(fred)} rows")
+    except Exception as e:
+        st.error(f"❌ FRED error: {e}")
+        return
+
+    st.write("✅ Both datasets OK — problema está más abajo en el render")
 def render():
     st.markdown("""
     <style>
