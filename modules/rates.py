@@ -219,8 +219,10 @@ def _pctile(s, val):
 
 def _trim(s, start_date):
     """Trim series to start_date — works regardless of frequency (daily/monthly/weekly)."""
-    if start_date is None:
+    if start_date is None or len(s) == 0:
         return s
+    if not isinstance(s.index, pd.DatetimeIndex):
+        return s  # guard: empty/malformed series with RangeIndex
     return s[s.index >= pd.Timestamp(start_date)]
 
 def _clip_x(s, x_start):
@@ -763,7 +765,7 @@ def render():
         fig_bei.add_hline(y=2.0, line_color=GREEN, line_width=1, line_dash="dot",
                           annotation_text="Fed 2% target",
                           annotation_font=dict(color=GREEN, size=9))
-        l_bei = _L(200, "Inflation Breakevens — Expectativas implícitas de mercado")
+        l_bei = _L(280, "Inflation Breakevens — Expectativas implícitas de mercado")
         l_bei["yaxis"]["ticksuffix"] = "%"
         fig_bei.update_layout(**l_bei)
         st.plotly_chart(fig_bei, use_container_width=True)
@@ -895,24 +897,35 @@ def render():
 
     # HYG/LQD ratio if yfinance available
     if "HYG" in yfd and "LQD" in yfd and len(yfd["HYG"]) and len(yfd["LQD"]):
+        st.markdown('<div style="font-family:monospace;font-size:0.72rem;color:#6b6b8a;'
+                    'margin:8px 0 4px 0">HYG/LQD — Risk Appetite Proxy · '
+                    'alto = risk-on · bajo = risk-off</div>', unsafe_allow_html=True)
         common_etf = yfd["HYG"].index.intersection(yfd["LQD"].index)
         ratio = (yfd["HYG"].reindex(common_etf) / yfd["LQD"].reindex(common_etf))
         ratio_t = _trim(ratio, cut)
-        ratio_ma = ratio_t.rolling(20).mean()
-
         fig_ratio = go.Figure()
+        ratio_ma20  = ratio_t.rolling(20).mean()
+        ratio_ma252 = ratio.rolling(252).mean()   # full history for 252D MA
+        ratio_ma252_t = _trim(ratio_ma252, cut)
+
         fig_ratio.add_trace(go.Scatter(
-            name="HYG/LQD ratio", x=ratio_t.index, y=ratio_t.values,
+            name="HYG/LQD", x=ratio_t.index, y=ratio_t.values,
             line=dict(color=ORANGE, width=1.5),
             hovertemplate="<b>HYG/LQD</b>: %{y:.3f}<extra></extra>",
         ))
         fig_ratio.add_trace(go.Scatter(
-            name="20D MA", x=ratio_ma.index, y=ratio_ma.values,
+            name="20D MA", x=ratio_ma20.index, y=ratio_ma20.values,
             line=dict(color=WHITE, width=2),
             hovertemplate="<b>20D MA</b>: %{y:.3f}<extra></extra>",
         ))
+        fig_ratio.add_trace(go.Scatter(
+            name="252D MA", x=ratio_ma252_t.index, y=ratio_ma252_t.values,
+            line=dict(color=CYAN, width=1.5, dash="dot"),
+            hovertemplate="<b>252D MA</b>: %{y:.3f}<extra></extra>",
+        ))
         _yr_hyg, _yr_hyg_max = _yrange([ratio_t], pad=0.005)
-        l_r = _L(300, "HYG/LQD — Risk Appetite Proxy (alto = risk-on / bajo = risk-off)")
+        l_r = _L(320)
+        # No title in layout — use sec header above instead to avoid overlap
         if _yr_hyg is not None:
             l_r["yaxis"]["range"] = [_yr_hyg, _yr_hyg_max]
         l_r["yaxis"]["fixedrange"] = False
