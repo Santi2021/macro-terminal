@@ -99,31 +99,17 @@ st.markdown("""
 
 # ── Navigation ─────────────────────────────────────────────────────────────────
 MODULES = [
-    ("📊  GDP & Components",   "gdp",       True),
-    ("👷  Labor Market",       "labor",     True),
-    ("📈  Inflation",          "inflation", True),
-    ("🏢  Corporate Health",   "corporate", False),
-    ("📡  Leading Indicators", "leading",   False),
+    ("📊  GDP",          "gdp",       True),
+    ("👷  Labor",        "labor",     True),
+    ("📈  Inflation",    "inflation", True),
+    ("🏢  Corporate",    "corporate", True),
+    ("📉  Rates",        "rates",     True),
 ]
 
 tabs = st.tabs([m[0] for m in MODULES])
 
 for tab, (label, module_name, is_live) in zip(tabs, MODULES):
     with tab:
-        if not is_live:
-            icon = label.strip().split()[0]
-            name = label.strip().split("  ", 1)[-1]
-            st.markdown(f"""
-            <div style="display:flex; flex-direction:column; align-items:center;
-                        justify-content:center; height:400px;
-                        font-family:'IBM Plex Mono',monospace;">
-                <div style="font-size:2.5rem; margin-bottom:16px;">{icon}</div>
-                <div style="font-size:1rem; color:#e8e8f0;">{name}</div>
-                <div style="font-size:0.78rem; margin-top:8px; color:#3d3d5c;">Coming soon</div>
-            </div>
-            """, unsafe_allow_html=True)
-            continue
-
         if module_name == "gdp":
             from modules.gdp import render as render_gdp
             render_gdp()
@@ -133,3 +119,9 @@ for tab, (label, module_name, is_live) in zip(tabs, MODULES):
         elif module_name == "inflation":
             from modules.inflation import render as render_inflation
             render_inflation()
+        elif module_name == "corporate":
+            from modules.corporate import render as render_corporate
+            render_corporate()
+        elif module_name == "rates":
+            from modules.rates import render as render_rates
+            render_rates()
