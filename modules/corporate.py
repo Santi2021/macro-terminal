@@ -1,7 +1,9 @@
 """
-modules/corporate.py — Corporate Health module for Macro Terminal
-Sources: BEA NIPA (Corporate Profits by Industry, T11300 / T11400)
-         FRED (Profit margins proxy)
+modules/corporate.py — Corporate Health for Macro Terminal
+Sources:
+  BEA NIPA Table 6.16D  → Corporate Profits by Industry (quarterly, $B SAAR)
+  BEA NIPA Table 1.1.5  → Nominal GDP (for margin)
+  BEA NIPA Table 6.19D  → Undistributed profits & dividends
 """
 
 import streamlit as st
@@ -9,7 +11,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
-import json
 import os
 
 # ── Style ──────────────────────────────────────────────────────────────────────
@@ -27,455 +28,349 @@ VIOLET= "#a78bfa"
 TEAL  = "#14b8a6"
 PINK  = "#f472b6"
 
-# ── BEA Series Codes ───────────────────────────────────────────────────────────
-# NIPA Table 6.16D — Corporate Profits by Industry (Level, $B SAAR)
-# SeriesCodes from T11300 (with IVA & CCAdj)
+# ── BEA Table / Series mapping ─────────────────────────────────────────────────
+# BEA NIPA API: TableName format is "T" + table number without dots
+# Table 6.16D → T61600D  |  Table 6.19D → T61900D  |  Table 1.1.5 → T10105
+PROFIT_TABLE = "T61600D"
 PROFIT_CODES = {
-    # Headline
-    "total":          "A446RC",   # Domestic Industries Total
-    "financial":      "A447RC",   # Financial
-    "nonfinancial":   "A448RC",   # Nonfinancial
-    # Nonfinancial breakdown
-    "manufacturing":  "A449RC",   # Manufacturing
-    "wholesale":      "A780RC",   # Wholesale Trade
-    "retail":         "A782RC",   # Retail Trade
-    "information":    "A784RC",   # Information
-    "other_nonfin":   "A786RC",   # Other Nonfinancial
-    # Retained/Distributed
-    "retained":       "A455RC",   # Undistributed profits (retained earnings)
-    "dividends":      "W009RC",   # Net dividends paid
+    "total":         "A446RC",
+    "financial":     "A447RC",
+    "nonfinancial":  "A448RC",
+    "manufacturing": "A449RC",
+    "wholesale":     "A780RC",
+    "retail":        "A782RC",
+    "information":   "A784RC",
+    "other_nonfin":  "A786RC",
 }
 
-# NIPA Table T10105 — GDP for profit margin calculation
-GDP_CODE = "A191RC"   # Nominal GDP, $B SAAR  (T10105 or T10101)
+DISPOSITION_TABLE = "T61900D"
+DISPOSITION_CODES = {
+    "retained":  "A455RC",
+    "dividends": "W009RC",
+}
 
-# ── API helpers ────────────────────────────────────────────────────────────────
+GDP_TABLE = "T10105"
+GDP_CODE  = "A191RC"
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def _bea_key():
     try:    return st.secrets["BEA_API_KEY"]
     except: return os.getenv("BEA_API_KEY", "081DA2FC-1900-47A0-A40B-49C31925E395")
 
-def _fred_key():
-    try:    return st.secrets["FRED_API_KEY"]
-    except: return os.getenv("FRED_API_KEY", "")
 
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_profits() -> pd.DataFrame:
-    """Fetch NIPA T11300 — Profits by Industry."""
+def _fetch_nipa(table: str, frequency: str = "Q") -> pd.DataFrame:
     params = {
-        "UserID": _bea_key(),
-        "method": "GetData",
-        "DataSetName": "NIPA",
-        "TableName": "T11300",
-        "Frequency": "Q",
-        "Year": "ALL",
+        "UserID":       _bea_key(),
+        "method":       "GetData",
+        "DataSetName":  "NIPA",
+        "TableName":    table,
+        "Frequency":    frequency,
+        "Year":         "ALL",
         "ResultFormat": "JSON",
     }
-    resp = requests.get("https://apps.bea.gov/api/data", params=params, timeout=30)
+    resp = requests.get("https://apps.bea.gov/api/data", params=params, timeout=40)
     resp.raise_for_status()
-    rows = resp.json()["BEAAPI"]["Results"]["Data"]
-    df = pd.DataFrame(rows)
-    df["DataValue"] = (
-        df["DataValue"].astype(str)
-        .str.replace(",", "", regex=False)
-        .pipe(pd.to_numeric, errors="coerce")
-        .fillna(0)
-    )
+    body = resp.json().get("BEAAPI", {})
+
+    # Surface BEA-level errors (HTTP 200 but error payload)
+    if "Error" in body:
+        msg = body["Error"].get("APIErrorDescription", str(body["Error"]))
+        raise RuntimeError(f"BEA API error [{table}]: {msg}")
+
+    results = body.get("Results", {})
+    if "Data" not in results:
+        raise RuntimeError(
+            f"BEA returned no 'Data' for {table}. "
+            f"Results keys: {list(results.keys())}. "
+            f"Preview: {str(body)[:400]}"
+        )
+
+    df = pd.DataFrame(results["Data"])
+    df["DataValue"] = pd.to_numeric(
+        df["DataValue"].astype(str).str.replace(",", "", regex=False),
+        errors="coerce",
+    ).fillna(0)
     df["Date"] = df["TimePeriod"].apply(_parse_period)
     return df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_nominal_gdp() -> pd.Series:
-    """Fetch nominal GDP from NIPA T10105 for margin calculation."""
-    params = {
-        "UserID": _bea_key(),
-        "method": "GetData",
-        "DataSetName": "NIPA",
-        "TableName": "T10105",
-        "Frequency": "Q",
-        "Year": "ALL",
-        "ResultFormat": "JSON",
-    }
-    resp = requests.get("https://apps.bea.gov/api/data", params=params, timeout=30)
-    resp.raise_for_status()
-    rows = resp.json()["BEAAPI"]["Results"]["Data"]
-    df = pd.DataFrame(rows)
-    df["DataValue"] = (
-        df["DataValue"].astype(str)
-        .str.replace(",", "", regex=False)
-        .pipe(pd.to_numeric, errors="coerce")
-        .fillna(0)
-    )
-    df["Date"] = df["TimePeriod"].apply(_parse_period)
-    df = df.dropna(subset=["Date"])
-    gdp = df[df["SeriesCode"] == GDP_CODE].set_index("Date")["DataValue"]
-    return gdp.sort_index()
-
-
-def _parse_period(p):
+def _parse_period(p: str) -> pd.Timestamp:
     p = str(p).strip()
     if "Q" in p:
         year, q = p.split("Q")
-        month = int(q) * 3 - 2
-        return pd.Timestamp(f"{year}-{month:02d}-01")
+        return pd.Timestamp(f"{year}-{int(q)*3-2:02d}-01")
     return pd.NaT
 
 
-def get_s(df, code):
+def _get(df: pd.DataFrame, code: str) -> pd.Series:
     return df[df["SeriesCode"] == code].set_index("Date")["DataValue"].sort_index()
 
 
-def qlabel(ts):
-    return f"{ts.year} Q{(ts.month - 1) // 3 + 1}"
+def _ql(ts): return f"{ts.year} Q{(ts.month-1)//3+1}"
 
 
-def make_layout(height=380, title=""):
-    layout = dict(
+def _layout(h=380, title=""):
+    d = dict(
         paper_bgcolor=BG, plot_bgcolor=BG2,
-        font=dict(color=TEXT, size=11),
+        font=dict(color=TEXT, size=11, family="monospace"),
         xaxis=dict(gridcolor=GRID, linecolor=GRID, showgrid=False),
         yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True, zerolinecolor="#444466"),
-        hovermode="x unified",
-        height=height,
+        hovermode="x unified", height=h,
         margin=dict(l=60, r=20, t=44 if title else 28, b=36),
-        legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT, size=10),
-            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-        ),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT, size=10),
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     if title:
-        layout["title"] = dict(text=title, font=dict(size=12, color=MUTED), x=0, xanchor="left")
-    return layout
+        d["title"] = dict(text=title, font=dict(size=12, color=MUTED), x=0, xanchor="left")
+    return d
 
 
-# ── Main render ────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_profits():   return _fetch_nipa(PROFIT_TABLE)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_disp():      return _fetch_nipa(DISPOSITION_TABLE)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_gdp():
+    df = _fetch_nipa(GDP_TABLE)
+    return _get(df, GDP_CODE)
+
+
+# ── render ─────────────────────────────────────────────────────────────────────
 def render():
-    st.markdown("""
-    <style>
-    .kpi-card { background:#13132b; border:1px solid #1e1e3a; border-radius:8px;
-                padding:16px 20px; text-align:center; }
-    .kpi-value { font-family:monospace; font-size:1.85rem; font-weight:600; }
-    .kpi-label { font-size:0.72rem; color:#6b6b8a; text-transform:uppercase;
-                 letter-spacing:0.1em; margin-top:4px; }
-    .kpi-sub   { font-family:monospace; font-size:0.78rem; margin-top:4px; }
-    .sec { font-family:monospace; font-size:0.68rem; color:#6b6b8a; text-transform:uppercase;
-           letter-spacing:0.15em; margin:24px 0 8px 0;
-           border-bottom:1px solid #1e1e3a; padding-bottom:6px; }
-    .insight { background:#0a0a18; border-left:3px solid #00d4ff; border-radius:0 6px 6px 0;
-               padding:10px 14px; font-family:monospace; font-size:0.78rem;
-               color:#9999bb; margin:8px 0 16px 0; }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown("""<style>
+    .kpi-card{background:#13132b;border:1px solid #1e1e3a;border-radius:8px;padding:16px 20px;text-align:center;}
+    .kpi-value{font-family:monospace;font-size:1.85rem;font-weight:600;}
+    .kpi-label{font-size:0.72rem;color:#6b6b8a;text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;}
+    .kpi-sub{font-family:monospace;font-size:0.78rem;margin-top:4px;}
+    .sec{font-family:monospace;font-size:0.68rem;color:#6b6b8a;text-transform:uppercase;
+         letter-spacing:0.15em;margin:24px 0 8px 0;border-bottom:1px solid #1e1e3a;padding-bottom:6px;}
+    .insight{background:#0a0a18;border-left:3px solid #00d4ff;border-radius:0 6px 6px 0;
+             padding:10px 14px;font-family:monospace;font-size:0.78rem;color:#9999bb;margin:8px 0 16px 0;}
+    </style>""", unsafe_allow_html=True)
 
-    # Range selector
     col_r, _ = st.columns([3, 7])
     with col_r:
-        rng = st.radio("Range", ["5Y", "10Y", "20Y", "All"],
-                       index=1, horizontal=True, label_visibility="collapsed",
-                       key="corp_range")
-    cuts = {"5Y": -20, "10Y": -40, "20Y": -80, "All": 0}
-    cut  = cuts[rng]
+        rng = st.radio("Range", ["5Y","10Y","20Y","All"], index=1,
+                       horizontal=True, label_visibility="collapsed", key="corp_range")
+    cut = {"5Y":-20,"10Y":-40,"20Y":-80,"All":0}[rng]
 
-    with st.spinner("Loading BEA Corporate Profits data..."):
-        try:
-            df  = load_profits()
-            gdp = load_nominal_gdp()
-        except Exception as e:
-            st.error(f"Data fetch error: {e}")
-            return
+    # ── Load data ──────────────────────────────────────────────────────────────
+    with st.spinner("Loading BEA Corporate Profits..."):
+        profits_df = disp_df = gdp_s = None
+        errs = []
+        try:   profits_df = _load_profits()
+        except Exception as e: errs.append(f"**Profits (T61600D):** {e}")
+        try:   disp_df = _load_disp()
+        except Exception as e: errs.append(f"**Disposition (T61900D):** {e}")
+        try:   gdp_s = _load_gdp()
+        except Exception as e: errs.append(f"**GDP (T10105):** {e}")
 
-    if df.empty:
-        st.error("No profit data returned from BEA.")
+    if errs:
+        for e in errs: st.error(e)
+        if profits_df is None: return
+
+    # ── Series ─────────────────────────────────────────────────────────────────
+    total     = _get(profits_df, PROFIT_CODES["total"])
+    financial = _get(profits_df, PROFIT_CODES["financial"])
+    nonfin    = _get(profits_df, PROFIT_CODES["nonfinancial"])
+    mfg       = _get(profits_df, PROFIT_CODES["manufacturing"])
+    wholesale = _get(profits_df, PROFIT_CODES["wholesale"])
+    retail    = _get(profits_df, PROFIT_CODES["retail"])
+    info      = _get(profits_df, PROFIT_CODES["information"])
+    other_nf  = _get(profits_df, PROFIT_CODES["other_nonfin"])
+
+    # If any key series is empty, show diagnostic
+    if total.empty:
+        avail = sorted(profits_df["SeriesCode"].unique())
+        st.error(
+            f"SeriesCode '{PROFIT_CODES['total']}' not found in T61600D.\n\n"
+            f"Available codes (first 40): {avail[:40]}\n\n"
+            f"Please open a GitHub issue with this list to fix the mapping."
+        )
         return
 
-    def trim(s):
-        return s.iloc[cut:] if cut != 0 else s
-
-    # ── Pull series ────────────────────────────────────────────────────────────
-    total     = get_s(df, PROFIT_CODES["total"])
-    financial = get_s(df, PROFIT_CODES["financial"])
-    nonfin    = get_s(df, PROFIT_CODES["nonfinancial"])
-    mfg       = get_s(df, PROFIT_CODES["manufacturing"])
-    wholesale = get_s(df, PROFIT_CODES["wholesale"])
-    retail    = get_s(df, PROFIT_CODES["retail"])
-    info      = get_s(df, PROFIT_CODES["information"])
-    other_nf  = get_s(df, PROFIT_CODES["other_nonfin"])
-    retained  = get_s(df, PROFIT_CODES["retained"])
-    dividends = get_s(df, PROFIT_CODES["dividends"])
-
-    # Common index for all main series
     common = total.index
     for s in [financial, nonfin]:
         if len(s): common = common.intersection(s.index)
     common = common.sort_values()
 
-    if len(common) < 4:
-        st.error("Not enough overlapping data.")
-        return
+    def _trim(s, idx=common):
+        s = s.reindex(idx).fillna(0)
+        return s.iloc[cut:] if cut != 0 else s
 
-    # YoY growth
-    def yoy(s): return s.pct_change(4) * 100
+    ql_full = [_ql(d) for d in common]
+    ql_t    = ql_full[cut:] if cut != 0 else ql_full
 
-    total_yoy    = yoy(total)
-    fin_yoy      = yoy(financial)
-    nonfin_yoy   = yoy(nonfin)
+    tot_t    = _trim(total)
+    fin_t    = _trim(financial)
+    nonfin_t = _trim(nonfin)
+    yoy_full = total.pct_change(4) * 100
+    yoy_t    = _trim(yoy_full)
 
-    # Profit margin = Total Corporate Profits / Nominal GDP
-    margin_idx   = total.index.intersection(gdp.index)
-    margin       = (total.reindex(margin_idx) / gdp.reindex(margin_idx)) * 100
+    l_total  = float(total.dropna().iloc[-1])      if len(total.dropna())    else 0
+    l_fin    = float(financial.dropna().iloc[-1])   if len(financial.dropna()) else 0
+    l_nonfin = float(nonfin.dropna().iloc[-1])      if len(nonfin.dropna())   else 0
+    l_yoy    = float(yoy_full.dropna().iloc[-1])    if len(yoy_full.dropna()) else 0
 
-    # Latest values
-    l_total  = total.dropna().iloc[-1]  if len(total.dropna())  else 0
-    l_fin    = financial.dropna().iloc[-1] if len(financial.dropna()) else 0
-    l_nonfin = nonfin.dropna().iloc[-1]   if len(nonfin.dropna())    else 0
-    l_margin = margin.dropna().iloc[-1]   if len(margin.dropna())    else 0
-    l_yoy    = total_yoy.dropna().iloc[-1] if len(total_yoy.dropna()) else 0
+    margin = pd.Series(dtype=float)
+    l_margin = 0.0
+    if gdp_s is not None and len(gdp_s):
+        midx   = total.index.intersection(gdp_s.index)
+        margin = (total.reindex(midx) / gdp_s.reindex(midx) * 100)
+        l_margin = float(margin.dropna().iloc[-1]) if len(margin.dropna()) else 0
 
-    latest_q = qlabel(common[-1])
-
-    # ── KPI Cards ─────────────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5 = st.columns(5)
-    kpis = [
-        (f"${l_total/1000:.1f}T",    "Total Profits",       "SAAR, annualized",   CYAN),
-        (f"{l_yoy:+.1f}%",           "YoY Growth",          f"vs year ago",        GREEN if l_yoy >= 0 else RED),
-        (f"{l_margin:.1f}%",         "Profit Margin",       "% of Nominal GDP",   AMBER),
-        (f"${l_fin/1000:.1f}T",      "Financial",           "sector profits",      BLUE),
-        (f"${l_nonfin/1000:.1f}T",   "Non-Financial",       "sector profits",      VIOLET),
-    ]
-    for col, (val, label, sub, color) in zip([c1,c2,c3,c4,c5], kpis):
+    # ── KPIs ───────────────────────────────────────────────────────────────────
+    cols = st.columns(5)
+    for col, (val, label, sub, color) in zip(cols, [
+        (f"${l_total/1000:.1f}T",  "Total Profits",  "SAAR annualized",   CYAN),
+        (f"{l_yoy:+.1f}%",         "YoY Growth",     "vs year ago",        GREEN if l_yoy>=0 else RED),
+        (f"{l_margin:.1f}%",       "Profit/GDP",     "vs nominal GDP",    AMBER),
+        (f"${l_fin/1000:.1f}T",    "Financial",      "sector profits",     BLUE),
+        (f"${l_nonfin/1000:.1f}T", "Non-Financial",  "sector profits",     VIOLET),
+    ]):
         with col:
-            st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-value" style="color:{color}">{val}</div>
-                <div class="kpi-label">{label}</div>
-                <div class="kpi-sub" style="color:{MUTED}">{sub}</div>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:{color}">{val}</div>'
+                        f'<div class="kpi-label">{label}</div>'
+                        f'<div class="kpi-sub" style="color:{MUTED}">{sub}</div></div>', unsafe_allow_html=True)
 
-    st.markdown(
-        f'<div style="color:{MUTED};font-size:0.7rem;margin-top:6px;font-family:monospace">'
-        f'Latest: {latest_q} · BEA NIPA T11300 · Corporate Profits with IVA & CCAdj · $B SAAR</div>',
-        unsafe_allow_html=True)
+    st.markdown(f'<div style="color:{MUTED};font-size:0.7rem;margin-top:6px;font-family:monospace">'
+                f'Latest: {_ql(common[-1])} · BEA NIPA T61600D · $B SAAR</div>', unsafe_allow_html=True)
 
-    # ── Section 1: Total Profits Level + YoY ──────────────────────────────────
+    # ── 1. Level + YoY ─────────────────────────────────────────────────────────
     st.markdown('<div class="sec">Corporate Profits — Level & YoY Growth</div>', unsafe_allow_html=True)
-
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    tot_t = trim(total.reindex(common))
-    yoy_t = trim(total_yoy.reindex(common))
-    qlabels = [qlabel(d) for d in trim(common)]
-
-    fig.add_trace(go.Bar(
-        name="Total Profits ($B)",
-        x=qlabels, y=tot_t.values,
-        marker_color=CYAN, opacity=0.5,
-        hovertemplate="<b>Total Profits</b>: $%{y:,.0f}B<extra></extra>",
-    ), secondary_y=False)
-
-    colors_yoy = [GREEN if v >= 0 else RED for v in yoy_t.fillna(0).values]
-    fig.add_trace(go.Scatter(
-        name="YoY %",
-        x=qlabels, y=yoy_t.values,
+    fig.add_trace(go.Bar(name="Profits ($B)", x=ql_t, y=tot_t.values,
+        marker_color=CYAN, opacity=0.45,
+        hovertemplate="<b>Profits</b>: $%{y:,.0f}B<extra></extra>"), secondary_y=False)
+    fig.add_trace(go.Scatter(name="YoY %", x=ql_t, y=yoy_t.values,
         line=dict(color=AMBER, width=2.5),
-        hovertemplate="<b>YoY Growth</b>: %{y:+.1f}%<extra></extra>",
-    ), secondary_y=True)
-
+        hovertemplate="<b>YoY</b>: %{y:+.1f}%<extra></extra>"), secondary_y=True)
     fig.add_hline(y=0, line_color="#444466", line_width=1, secondary_y=True)
-    fig.update_layout(**make_layout(360))
-    fig.update_layout(paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified", barmode="overlay")
-    fig.update_yaxes(title_text="Profits $B (SAAR)", gridcolor=GRID, linecolor=GRID,
-                     zeroline=False, secondary_y=False, title_font=dict(color=CYAN, size=10))
-    fig.update_yaxes(title_text="YoY %", gridcolor="rgba(0,0,0,0)",
-                     zeroline=False, secondary_y=True, title_font=dict(color=AMBER, size=10))
+    fig.update_layout(**_layout(360), barmode="overlay", paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified")
+    fig.update_yaxes(title_text="$B", gridcolor=GRID, zeroline=False, secondary_y=False, title_font=dict(color=CYAN,size=10))
+    fig.update_yaxes(title_text="YoY %", gridcolor="rgba(0,0,0,0)", zeroline=False, secondary_y=True, title_font=dict(color=AMBER,size=10))
     fig.update_xaxes(gridcolor=GRID, linecolor=GRID)
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── Section 2: Financial vs Non-Financial ─────────────────────────────────
+    # ── 2. Fin vs NonFin ───────────────────────────────────────────────────────
     st.markdown('<div class="sec">Financial vs Non-Financial Corporate Profits</div>', unsafe_allow_html=True)
-
-    fin_t   = trim(financial.reindex(common).fillna(0))
-    nonfin_t= trim(nonfin.reindex(common).fillna(0))
-    ql_t    = [qlabel(d) for d in trim(common)]
-
     fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(
-        name="Financial", x=ql_t, y=fin_t.values,
-        line=dict(color=BLUE, width=2.5),
-        fill="tozeroy", fillcolor="rgba(59,130,246,0.08)",
-        hovertemplate="<b>Financial</b>: $%{y:,.0f}B<extra></extra>",
-    ))
-    fig2.add_trace(go.Scatter(
-        name="Non-Financial", x=ql_t, y=nonfin_t.values,
-        line=dict(color=VIOLET, width=2.5),
-        fill="tozeroy", fillcolor="rgba(167,139,250,0.08)",
-        hovertemplate="<b>Non-Financial</b>: $%{y:,.0f}B<extra></extra>",
-    ))
-    fig2.update_layout(**make_layout(320))
+    fig2.add_trace(go.Scatter(name="Financial", x=ql_t, y=fin_t.values,
+        line=dict(color=BLUE, width=2.5), fill="tozeroy", fillcolor="rgba(59,130,246,0.08)",
+        hovertemplate="<b>Financial</b>: $%{y:,.0f}B<extra></extra>"))
+    fig2.add_trace(go.Scatter(name="Non-Financial", x=ql_t, y=nonfin_t.values,
+        line=dict(color=VIOLET, width=2.5), fill="tozeroy", fillcolor="rgba(167,139,250,0.08)",
+        hovertemplate="<b>Non-Fin</b>: $%{y:,.0f}B<extra></extra>"))
+    fig2.update_layout(**_layout(300))
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Fin vs NonFin share
-    fin_share   = (fin_t / (fin_t + nonfin_t) * 100).dropna()
-    latest_fin_share = fin_share.iloc[-1] if len(fin_share) else 0
-    st.markdown(
-        f'<div class="insight">🏦 Financial sector share of total domestic profits: '
-        f'<b style="color:{BLUE}">{latest_fin_share:.1f}%</b>. '
-        f'Financial > 30% historically signals financialization of the economy. '
-        f'Sharp moves often precede credit stress.</div>',
-        unsafe_allow_html=True)
+    denom = (fin_t + nonfin_t).replace(0, float("nan"))
+    fin_share = float((fin_t / denom * 100).dropna().iloc[-1]) if len((fin_t/denom*100).dropna()) else 0
+    st.markdown(f'<div class="insight">🏦 Financial share: <b style="color:{BLUE}">{fin_share:.1f}%</b> of domestic profits. '
+                f'>30% históricamente señala financialization elevada.</div>', unsafe_allow_html=True)
 
-    # ── Section 3: Nonfinancial Industry Breakdown ─────────────────────────────
-    st.markdown('<div class="sec">Non-Financial Profit Breakdown by Industry</div>', unsafe_allow_html=True)
-
-    industry_series = {
-        "Manufacturing": (mfg,       "#10b981"),
-        "Wholesale":     (wholesale,  "#34d399"),
-        "Retail":        (retail,     "#f59e0b"),
-        "Information":   (info,       "#a78bfa"),
-        "Other":         (other_nf,   "#94a3b8"),
-    }
-
+    # ── 3. Industry Breakdown ──────────────────────────────────────────────────
+    st.markdown('<div class="sec">Non-Financial Breakdown by Industry</div>', unsafe_allow_html=True)
     fig3 = go.Figure()
-    for label, (s, color) in industry_series.items():
-        st_s = trim(s.reindex(common).fillna(0))
-        fig3.add_trace(go.Bar(
-            name=label, x=ql_t, y=st_s.values,
-            marker_color=color,
-            marker_line_color=BG2, marker_line_width=0.5,
-            hovertemplate=f"<b>{label}</b>: $%{{y:,.0f}}B<extra></extra>",
-        ))
-
-    fig3.update_layout(**make_layout(340), barmode="stack")
+    for label, s, color in [
+        ("Manufacturing", mfg, "#10b981"), ("Wholesale", wholesale, "#34d399"),
+        ("Retail", retail, "#f59e0b"),     ("Information", info, "#a78bfa"),
+        ("Other", other_nf, "#94a3b8"),
+    ]:
+        vals = s.reindex(common).fillna(0)
+        vals = vals.iloc[cut:] if cut != 0 else vals
+        fig3.add_trace(go.Bar(name=label, x=ql_t, y=vals.values,
+            marker_color=color, marker_line_color=BG2, marker_line_width=0.4,
+            hovertemplate=f"<b>{label}</b>: $%{{y:,.0f}}B<extra></extra>"))
+    fig3.update_layout(**_layout(320), barmode="stack")
     st.plotly_chart(fig3, use_container_width=True)
 
-    # ── Section 4: Profit Margin (Profits / GDP) ──────────────────────────────
-    st.markdown('<div class="sec">Corporate Profit Margin — % of Nominal GDP</div>', unsafe_allow_html=True)
+    # ── 4. Profit Margin ───────────────────────────────────────────────────────
+    st.markdown('<div class="sec">Profit Margin — % of Nominal GDP</div>', unsafe_allow_html=True)
+    if len(margin):
+        m_trim = margin.iloc[cut:] if cut != 0 else margin
+        m_ql   = [_ql(d) for d in m_trim.index]
+        h_avg  = float(margin.mean())
+        h_peak = float(margin.max())
+        fig4 = go.Figure()
+        fig4.add_hrect(y0=h_avg-0.3, y1=h_avg+0.3, fillcolor=GREEN, opacity=0.06, line_width=0,
+                       annotation_text=f"Avg {h_avg:.1f}%", annotation_position="top right",
+                       annotation_font=dict(color=GREEN, size=9))
+        fig4.add_trace(go.Scatter(name="Profit/GDP %", x=m_ql, y=m_trim.values,
+            line=dict(color=TEAL, width=2.5), fill="tozeroy", fillcolor="rgba(20,184,166,0.07)",
+            hovertemplate="<b>Margin</b>: %{y:.2f}%<extra></extra>"))
+        fig4.add_hline(y=h_avg, line_color=GREEN, line_width=1, line_dash="dot")
+        l4 = _layout(300)
+        l4["yaxis"]["ticksuffix"] = "%"
+        fig4.update_layout(**l4)
+        st.plotly_chart(fig4, use_container_width=True)
+        st.markdown(f'<div class="insight">📊 Margin: <b style="color:{TEAL}">{l_margin:.2f}%</b> · '
+                    f'Avg: <b style="color:{GREEN}">{h_avg:.2f}%</b> · '
+                    f'Peak: <b style="color:{AMBER}">{h_peak:.2f}%</b>. '
+                    f'Persistencia por encima del promedio históricamente precede compresión.</div>', unsafe_allow_html=True)
+    else:
+        st.info("GDP data unavailable for margin calculation.")
 
-    margin_t = trim(margin)
-    margin_ql = [qlabel(d) for d in margin_t.index]
-
-    # Historical avg
-    hist_avg  = margin.mean()
-    hist_peak = margin.max()
-
-    fig4 = go.Figure()
-    fig4.add_hrect(
-        y0=hist_avg - 0.3, y1=hist_avg + 0.3,
-        fillcolor=GREEN, opacity=0.06, line_width=0,
-        annotation_text=f"Hist avg {hist_avg:.1f}%",
-        annotation_position="top right",
-        annotation_font=dict(color=GREEN, size=9),
-    )
-    fig4.add_trace(go.Scatter(
-        name="Profit Margin % GDP",
-        x=margin_ql, y=margin_t.values,
-        line=dict(color=TEAL, width=2.5),
-        fill="tozeroy", fillcolor="rgba(20,184,166,0.08)",
-        hovertemplate="<b>Margin</b>: %{y:.2f}% of GDP<extra></extra>",
-    ))
-    fig4.add_hline(y=hist_avg, line_color=GREEN, line_width=1, line_dash="dot")
-
-    layout4 = make_layout(300)
-    layout4["yaxis"]["ticksuffix"] = "%"
-    fig4.update_layout(**layout4)
-    st.plotly_chart(fig4, use_container_width=True)
-
-    st.markdown(
-        f'<div class="insight">📊 Profit margin actual: <b style="color:{TEAL}">{l_margin:.2f}%</b> del GDP nominal. '
-        f'Media histórica: <b style="color:{GREEN}">{hist_avg:.2f}%</b>. '
-        f'Pico histórico: <b style="color:{AMBER}">{hist_peak:.2f}%</b>. '
-        f'Margins por encima del promedio histórico sugieren presión bajista de largo plazo '
-        f'(mean reversion, presión laboral o regulatoria).</div>',
-        unsafe_allow_html=True)
-
-    # ── Section 5: Retained Earnings vs Dividends ─────────────────────────────
+    # ── 5. Retained vs Dividends ───────────────────────────────────────────────
     st.markdown('<div class="sec">Profit Disposition — Retained Earnings vs Dividends</div>', unsafe_allow_html=True)
+    if disp_df is not None:
+        retained  = _get(disp_df, DISPOSITION_CODES["retained"])
+        dividends = _get(disp_df, DISPOSITION_CODES["dividends"])
+        ret_idx   = common.intersection(retained.index).intersection(dividends.index)
+        if len(ret_idx) > 4:
+            ret_t = retained.reindex(ret_idx).ffill().fillna(0)
+            div_t = dividends.reindex(ret_idx).ffill().fillna(0)
+            ret_t = ret_t.iloc[cut:] if cut != 0 else ret_t
+            div_t = div_t.iloc[cut:] if cut != 0 else div_t
+            ql_r  = [_ql(d) for d in (ret_idx[cut:] if cut != 0 else ret_idx)]
+            denom_d = (ret_t + div_t).replace(0, float("nan"))
+            payout  = (div_t / denom_d * 100).fillna(0)
+            l_pay   = float(payout.iloc[-1]) if len(payout) else 0
 
-    ret_t = trim(retained.reindex(common).fillna(method="ffill"))
-    div_t = trim(dividends.reindex(common).fillna(method="ffill"))
+            fig5 = make_subplots(specs=[[{"secondary_y": True}]])
+            fig5.add_trace(go.Bar(name="Retained", x=ql_r, y=ret_t.values,
+                marker_color=GREEN, opacity=0.8,
+                hovertemplate="<b>Retained</b>: $%{y:,.0f}B<extra></extra>"), secondary_y=False)
+            fig5.add_trace(go.Bar(name="Dividends", x=ql_r, y=div_t.values,
+                marker_color=PINK, opacity=0.8,
+                hovertemplate="<b>Dividends</b>: $%{y:,.0f}B<extra></extra>"), secondary_y=False)
+            fig5.add_trace(go.Scatter(name="Payout %", x=ql_r, y=payout.values,
+                line=dict(color=AMBER, width=2, dash="dot"),
+                hovertemplate="<b>Payout</b>: %{y:.1f}%<extra></extra>"), secondary_y=True)
+            fig5.update_layout(**_layout(300), barmode="stack", paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified")
+            fig5.update_yaxes(title_text="$B", gridcolor=GRID, zeroline=False, secondary_y=False, title_font=dict(color=GREEN,size=10))
+            fig5.update_yaxes(title_text="Payout %", gridcolor="rgba(0,0,0,0)", zeroline=False, secondary_y=True, title_font=dict(color=AMBER,size=10))
+            fig5.update_xaxes(gridcolor=GRID, linecolor=GRID)
+            st.plotly_chart(fig5, use_container_width=True)
+            st.markdown(f'<div class="insight">💰 Payout ratio: <b style="color:{PINK}">{l_pay:.0f}%</b> distribuido como dividendos. '
+                        f'Alto = defensivo. Bajo = reinversión / recompras.</div>', unsafe_allow_html=True)
+        else:
+            st.info("Not enough disposition data.")
+    else:
+        st.info("Disposition table unavailable.")
 
-    # Payout ratio
-    payout = (div_t / (ret_t + div_t).replace(0, float("nan")) * 100).fillna(0)
-    latest_payout = payout.iloc[-1] if len(payout) else 0
-
-    fig5 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig5.add_trace(go.Bar(
-        name="Retained Earnings", x=ql_t, y=ret_t.values,
-        marker_color=GREEN, opacity=0.8,
-        hovertemplate="<b>Retained</b>: $%{y:,.0f}B<extra></extra>",
-    ), secondary_y=False)
-    fig5.add_trace(go.Bar(
-        name="Dividends", x=ql_t, y=div_t.values,
-        marker_color=PINK, opacity=0.8,
-        hovertemplate="<b>Dividends</b>: $%{y:,.0f}B<extra></extra>",
-    ), secondary_y=False)
-    fig5.add_trace(go.Scatter(
-        name="Payout Ratio %", x=ql_t, y=payout.values,
-        line=dict(color=AMBER, width=2, dash="dot"),
-        hovertemplate="<b>Payout Ratio</b>: %{y:.1f}%<extra></extra>",
-    ), secondary_y=True)
-
-    fig5.update_layout(**make_layout(320), barmode="stack")
-    fig5.update_layout(paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified")
-    fig5.update_yaxes(title_text="$B SAAR", gridcolor=GRID, linecolor=GRID,
-                      zeroline=False, secondary_y=False, title_font=dict(color=GREEN, size=10))
-    fig5.update_yaxes(title_text="Payout %", gridcolor="rgba(0,0,0,0)",
-                      zeroline=False, secondary_y=True, title_font=dict(color=AMBER, size=10))
-    fig5.update_xaxes(gridcolor=GRID, linecolor=GRID)
-    st.plotly_chart(fig5, use_container_width=True)
-
-    st.markdown(
-        f'<div class="insight">💰 Payout ratio actual: <b style="color:{PINK}">{latest_payout:.0f}%</b> de profits distribuidos como dividendos. '
-        f'Alto payout = management defensivo / menos reinversión. '
-        f'Retained earnings elevados = potencial capex, M&A o buybacks futuros.</div>',
-        unsafe_allow_html=True)
-
-    # ── Heatmap: Last 8 Quarters ───────────────────────────────────────────────
-    st.markdown('<div class="sec">Corporate Profits Snapshot — Last 8 Quarters ($B SAAR)</div>', unsafe_allow_html=True)
-
+    # ── 6. Heatmap ─────────────────────────────────────────────────────────────
+    st.markdown('<div class="sec">Snapshot — Last 8 Quarters ($B SAAR)</div>', unsafe_allow_html=True)
     last8 = common[-8:]
-    ql8   = [qlabel(d) for d in last8]
+    ql8   = [_ql(d) for d in last8]
+    snap  = {"Total": total, "Financial": financial, "Non-Fin": nonfin,
+             "Mfg": mfg, "Info": info, "Retail": retail, "Wholesale": wholesale}
+    if len(margin): snap["Margin%"] = margin
+    snap_df = pd.DataFrame({k: s.reindex(last8).fillna(0).values for k,s in snap.items()}, index=ql8).T
 
-    snap = {
-        "Total":          total.reindex(last8).fillna(0),
-        "Financial":      financial.reindex(last8).fillna(0),
-        "Non-Financial":  nonfin.reindex(last8).fillna(0),
-        "Manufacturing":  mfg.reindex(last8).fillna(0),
-        "Information":    info.reindex(last8).fillna(0),
-        "Retail":         retail.reindex(last8).fillna(0),
-        "Retained":       retained.reindex(last8).fillna(0),
-        "Dividends":      dividends.reindex(last8).fillna(0),
-        "Margin % GDP":   margin.reindex(last8).fillna(0),
-    }
+    def _cc(v):
+        if pd.isna(v): return "background:#0d0d1a;color:#3d3d5c;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
+        if v > 1500:   return "background:#0d4f2b;color:#4ade80;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
+        elif v > 800:  return "background:#0a3320;color:#34d399;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
+        elif v > 200:  return "background:#0c2918;color:#6ee7b7;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
+        elif v >= 0:   return "background:#13132b;color:#9999bb;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
+        else:          return "background:#2d1515;color:#fca5a5;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
 
-    snap_df = pd.DataFrame({k: v.values for k, v in snap.items()}, index=ql8).T
-
-    def color_cell(val):
-        # Color based on magnitude for level data
-        if val > 1500:   return "background:#0d4f2b;color:#4ade80;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
-        elif val > 800:  return "background:#0a3320;color:#34d399;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
-        elif val > 200:  return "background:#0c2918;color:#6ee7b7;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
-        elif val > 0:    return "background:#13132b;color:#9999bb;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
-        else:            return "background:#2d1515;color:#fca5a5;text-align:center;font-family:monospace;font-size:0.78rem;padding:5px"
-
-    def fmt_cell(row_label, val):
-        if row_label == "Margin % GDP":
-            return f"{val:.2f}%"
-        return f"${val:,.0f}"
-
-    # Build display df with custom formatting per row
-    display_rows = {}
-    for row_label, vals in snap.items():
-        display_rows[row_label] = [
-            f"{v:.2f}%" if row_label == "Margin % GDP" else f"${v:,.0f}"
-            for v in vals.values
-        ]
-    display_df = pd.DataFrame(display_rows, index=ql8).T
-
-    styled = snap_df.style.applymap(color_cell)
-    st.dataframe(styled, use_container_width=True)
-
-    st.markdown(
-        f'<div style="color:{MUTED};font-size:0.7rem;margin-top:12px;font-family:monospace">'
-        f'Sources: BEA NIPA Table 11.3 · Corporate Profits with IVA & CCAdj · SAAR</div>',
-        unsafe_allow_html=True)
+    st.dataframe(snap_df.style.applymap(_cc).format(lambda v: f"{v:.2f}" if abs(v)<100 else f"${v:,.0f}"),
+                 use_container_width=True)
+    st.markdown(f'<div style="color:{MUTED};font-size:0.7rem;margin-top:12px;font-family:monospace">'
+                f'BEA NIPA T61600D · T61900D · T10105 · Corporate Profits with IVA & CCAdj · SAAR</div>',
+                unsafe_allow_html=True)
