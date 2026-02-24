@@ -316,8 +316,7 @@ def render():
         hovertemplate="<b>YoY</b>: %{y:+.1f}%<extra></extra>",
     ), secondary_y=True)
     fig.add_hline(y=0, line_color="#444466", line_width=1, secondary_y=True)
-    fig.update_layout(**_layout(360), barmode="overlay",
-                      paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified")
+    fig.update_layout(**_layout(360), barmode="overlay")
     fig.update_yaxes(title_text=unit, gridcolor=GRID, zeroline=False,
                      secondary_y=False, title_font=dict(color=CYAN, size=10))
     fig.update_yaxes(title_text="YoY %", gridcolor="rgba(0,0,0,0)", zeroline=False,
@@ -473,9 +472,7 @@ def render():
                 line=dict(color=AMBER, width=2, dash="dot"),
                 hovertemplate="<b>Retention Rate</b>: %{y:.1f}%<extra></extra>",
             ), secondary_y=True)
-            fig5.update_layout(
-                **_layout(300), barmode="overlay",
-                paper_bgcolor=BG, plot_bgcolor=BG2, hovermode="x unified")
+            fig5.update_layout(**_layout(300), barmode="overlay")
             fig5.update_yaxes(title_text=unit, gridcolor=GRID, zeroline=False,
                               secondary_y=False, title_font=dict(color=GREEN, size=10))
             fig5.update_yaxes(title_text="Retention %", gridcolor="rgba(0,0,0,0)",
