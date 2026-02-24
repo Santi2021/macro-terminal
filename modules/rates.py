@@ -165,6 +165,13 @@ def load_fred_data(start: str = "1995-01-01") -> dict:
         except: data[name] = pd.Series(dtype=float)
     return data
 
+def _start_for_cut(cut: int) -> str:
+    """Map cut value to FRED start date — fetch only what we need."""
+    if cut == 0:      return "1995-01-01"
+    if cut <= -2520:  return "2014-01-01"   # 10Y
+    if cut <= -1260:  return "2018-01-01"   # 5Y
+    return "2022-01-01"                      # 2Y — plenty of buffer
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_treasury_curve() -> pd.Series:
@@ -293,8 +300,9 @@ def render():
     # ── Load data ──────────────────────────────────────────────────────────────
     with st.spinner("Loading rates data..."):
         try:
-            D   = load_fred_data()
-            tcv = load_treasury_curve()   # today's official curve
+            start_date = _start_for_cut(cut)
+            D   = load_fred_data(start_date)
+            tcv = load_treasury_curve()
             yfd = load_yf_data() if YF_AVAILABLE else {}
         except Exception as e:
             st.error(f"Data error: {e}")
@@ -394,19 +402,11 @@ def render():
     onrrp_t = _trim(D["onrrp"],   cut)
     onvol_t = _trim(D["onrrp_vol"], cut)
 
-    # x_start: earliest date of the trimmed ff_t — hard clip all series to this
-    x_start_corr = ff_t.dropna().index.min() if len(ff_t.dropna()) else None
-    ff_t    = _clip_x(ff_t,    x_start_corr)
-    sofr_t  = _clip_x(sofr_t,  x_start_corr)
-    iorb_t  = _clip_x(iorb_t,  x_start_corr)
-    onrrp_t = _clip_x(onrrp_t, x_start_corr)
-    onvol_t = _clip_x(onvol_t, x_start_corr)
-
     fig_corr = make_subplots(specs=[[{"secondary_y": True}]])
 
     # Fed target range as band
-    lb = _clip_x(_trim(D["fed_lb"], cut).dropna(), x_start_corr)
-    ub = _clip_x(_trim(D["fed_ub"], cut).dropna(), x_start_corr)
+    lb = _trim(D["fed_lb"], cut).dropna()
+    ub = _trim(D["fed_ub"], cut).dropna()
     common_fed = lb.index.intersection(ub.index)
     if len(common_fed):
         fig_corr.add_trace(go.Scatter(
@@ -567,12 +567,7 @@ def render():
         r30_h = _trim(D["dgs30"],  cut)
         spr_h = _trim(D["t10y2y"], cut)
         s3m_h = _trim(D["t10y3m"], cut)
-        x_start_hist = r10_h.dropna().index.min() if len(r10_h.dropna()) else None
-        r2_h  = _clip_x(r2_h,  x_start_hist)
-        r10_h = _clip_x(r10_h, x_start_hist)
-        r30_h = _clip_x(r30_h, x_start_hist)
-        spr_h = _clip_x(spr_h, x_start_hist)
-        s3m_h = _clip_x(s3m_h, x_start_hist)
+
 
         fig_hist = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -687,17 +682,11 @@ def render():
         r10_p   = _trim(D["dgs10"],    cut)
         bei_p   = _trim(D["bei10"],    cut)
 
-        x_start_pol = ff_p.dropna().index.min() if len(ff_p.dropna()) else None
-        ff_p   = _clip_x(ff_p,   x_start_pol)
-        tips_p = _clip_x(tips_p, x_start_pol)
-        r10_p  = _clip_x(r10_p,  x_start_pol)
-        bei_p  = _clip_x(bei_p,  x_start_pol)
-
         fig_pol = go.Figure()
 
         # Fed target range band
-        lb_p = _clip_x(_trim(D["fed_lb"], cut).dropna(), x_start_pol)
-        ub_p = _clip_x(_trim(D["fed_ub"], cut).dropna(), x_start_pol)
+        lb_p = _trim(D["fed_lb"], cut).dropna()
+        ub_p = _trim(D["fed_ub"], cut).dropna()
         ci   = lb_p.index.intersection(ub_p.index)
         if len(ci):
             fig_pol.add_trace(go.Scatter(
@@ -783,10 +772,7 @@ def render():
         mort_t = _trim(D["mortgage30"], cut)
         dxy_t  = _trim(D["dollar"],     cut)
         ff_t2  = _trim(D["fedfunds"],   cut)
-        x_start_tr = ff_t2.dropna().index.min() if len(ff_t2.dropna()) else None
-        mort_t = _clip_x(mort_t, x_start_tr)
-        dxy_t  = _clip_x(dxy_t,  x_start_tr)
-        ff_t2  = _clip_x(ff_t2,  x_start_tr)
+
 
         fig_tr = make_subplots(specs=[[{"secondary_y": True}]])
         if len(mort_t.dropna()):
