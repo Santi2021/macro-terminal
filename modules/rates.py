@@ -219,6 +219,17 @@ def _trim(s, cut):
     if cut == 0: return s
     return s.iloc[cut:] if len(s) > abs(cut) else s
 
+def _yrange(series_list, pad=0.20, floor=None):
+    """Calculate dynamic Y range from list of visible series."""
+    all_vals = pd.concat([s.dropna() for s in series_list if len(s.dropna()) > 0])
+    if len(all_vals) == 0:
+        return None, None
+    y_min = float(all_vals.min()) - pad
+    y_max = float(all_vals.max()) + pad
+    if floor is not None:
+        y_min = max(y_min, floor)
+    return round(y_min, 3), round(y_max, 3)
+
 def _regime_label(real, spr, nfci, hy_bp):
     """Derive cycle regime from real rate, 2s10s, NFCI, HY."""
     score = 0
@@ -409,14 +420,25 @@ def render():
             hovertemplate="<b>RRP Vol</b>: $%{y:,.0f}B<extra></extra>",
         ), secondary_y=True)
 
-    fig_corr.update_layout(**_L(320), barmode="overlay")
-    fig_corr.update_yaxes(title_text="Rate %", gridcolor=GRID, zeroline=False,
-                          secondary_y=False, title_font=dict(color=AMBER, size=10),
-                          ticksuffix="%")
-    fig_corr.update_yaxes(title_text="RRP Vol $B", gridcolor="rgba(0,0,0,0)",
-                          zeroline=False, secondary_y=True,
-                          title_font=dict(color=VIOLET, size=10))
-    fig_corr.update_xaxes(gridcolor=GRID, linecolor=GRID)
+    # Dynamic Y range for corridor
+    _yr_corr, _yr_corr_max = _yrange([ff_t, sofr_t, iorb_t, onrrp_t], pad=0.15)
+    _vol_all = onvol_t.dropna() / 1000
+    _vol_max = round(float(_vol_all.max()) * 1.25, 2) if len(_vol_all) else 1.0
+
+    fig_corr.update_layout(**_L(340), barmode="overlay")
+    fig_corr.update_yaxes(
+        range=[_yr_corr, _yr_corr_max] if _yr_corr is not None else None,
+        ticksuffix="%", gridcolor=GRID, zeroline=False,
+        title_text="Rate %", title_font=dict(color=AMBER, size=10),
+        fixedrange=False, secondary_y=False,
+    )
+    fig_corr.update_yaxes(
+        range=[0, _vol_max],
+        title_text="RRP Vol $B", title_font=dict(color=VIOLET, size=10),
+        gridcolor="rgba(0,0,0,0)", zeroline=False,
+        fixedrange=False, secondary_y=True,
+    )
+    fig_corr.update_xaxes(gridcolor=GRID, linecolor=GRID, fixedrange=False)
     st.plotly_chart(fig_corr, use_container_width=True)
 
     rrp_vol_last = _last(D["onrrp_vol"]) / 1000
@@ -462,7 +484,10 @@ def render():
         all_tenors_today = {**today_fred, **today_curve}
 
         # Order tenors
-        tenor_order = ["1M","3M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"]
+        # 3M ago from FRED
+        m3ago = _curve_from_fred(63)
+
+        tenor_order = ["1M","3M","6M","1Y","2Y","5Y","7Y","10Y","20Y","30Y"]  # 3Y removed
         def _ordered(d):
             return [(t, d[t]) for t in tenor_order if t in d]
 
@@ -470,9 +495,10 @@ def render():
 
         # Plot curves back → front for visibility
         for label, pts, color, dash, width in [
-            ("2Y ago", y2ago,       MUTED2, "dot",   1.5),
-            ("1Y ago", y1ago,       BLUE2,  "dash",  2.0),
-            ("Today",  all_tenors_today, CYAN, "solid", 3.0),
+            ("2Y ago", y2ago,            MUTED2,  "dot",   1.5),
+            ("1Y ago", y1ago,            BLUE2,   "dash",  2.0),
+            ("3M ago", m3ago,            ORANGE,  "dash",  1.5),
+            ("Today",  all_tenors_today, CYAN,    "solid", 3.0),
         ]:
             ordered = _ordered(pts)
             if not ordered: continue
@@ -671,8 +697,13 @@ def render():
                 showlegend=False, hoverinfo="skip",
             ))
 
+        _yr_pol, _yr_pol_max = _yrange([ff_p, r10_p, tips_p], pad=0.30)
         l_pol = _L(360)
         l_pol["yaxis"]["ticksuffix"] = "%"
+        if _yr_pol is not None:
+            l_pol["yaxis"]["range"] = [_yr_pol, _yr_pol_max]
+        l_pol["yaxis"]["fixedrange"] = False
+        l_pol["xaxis"]["fixedrange"] = False
         fig_pol.update_layout(**l_pol)
         st.plotly_chart(fig_pol, use_container_width=True)
 
@@ -729,13 +760,22 @@ def render():
                 hovertemplate="<b>USD Index</b>: %{y:.1f}<extra></extra>",
             ), secondary_y=True)
 
+        _yr_tr, _yr_tr_max = _yrange([mort_t, ff_t2], pad=0.30)
+        _yr_dxy, _yr_dxy_max = _yrange([dxy_t], pad=1.0)
         fig_tr.update_layout(**_L(300))
-        fig_tr.update_yaxes(title_text="Rate %", gridcolor=GRID, zeroline=False,
-                            secondary_y=False, title_font=dict(color=PINK, size=10))
-        fig_tr.update_yaxes(title_text="USD Index", gridcolor="rgba(0,0,0,0)",
-                            zeroline=False, secondary_y=True,
-                            title_font=dict(color=CYAN, size=10))
-        fig_tr.update_xaxes(gridcolor=GRID, linecolor=GRID)
+        fig_tr.update_yaxes(
+            range=[_yr_tr, _yr_tr_max] if _yr_tr is not None else None,
+            title_text="Rate %", gridcolor=GRID, zeroline=False,
+            secondary_y=False, title_font=dict(color=PINK, size=10),
+            ticksuffix="%", fixedrange=False,
+        )
+        fig_tr.update_yaxes(
+            range=[_yr_dxy, _yr_dxy_max] if _yr_dxy is not None else None,
+            title_text="USD Index", gridcolor="rgba(0,0,0,0)",
+            zeroline=False, secondary_y=True,
+            title_font=dict(color=CYAN, size=10), fixedrange=False,
+        )
+        fig_tr.update_xaxes(gridcolor=GRID, linecolor=GRID, fixedrange=False)
         st.plotly_chart(fig_tr, use_container_width=True)
 
         mort_spread = l_mort - l_ff if not pd.isna(l_mort) else float("nan")
@@ -789,12 +829,6 @@ def render():
     y_max = min(float(all_oas.max()) * 1.15, 2500) if len(all_oas) else 500
     y_min = max(float(all_oas.min()) * 0.85, 0)
 
-    # Stress zones — dynamic
-    fig_cr.add_hrect(y0=600, y1=y_max, fillcolor=RED, opacity=0.04,
-                     line_width=0, annotation_text="HY Stress Zone",
-                     annotation_position="top right",
-                     annotation_font=dict(color=RED, size=9))
-
     for name, s, color, dash in [
         ("IG OAS",  ig_t,  GREEN, "dot"),
         ("BBB OAS", bbb_t, AMBER, "dash"),
@@ -831,7 +865,12 @@ def render():
             line=dict(color=WHITE, width=2),
             hovertemplate="<b>20D MA</b>: %{y:.3f}<extra></extra>",
         ))
-        l_r = _L(180, "HYG/LQD — Risk Appetite Proxy (alto = risk-on / bajo = risk-off)")
+        _yr_hyg, _yr_hyg_max = _yrange([ratio_t], pad=0.005)
+        l_r = _L(300, "HYG/LQD — Risk Appetite Proxy (alto = risk-on / bajo = risk-off)")
+        if _yr_hyg is not None:
+            l_r["yaxis"]["range"] = [_yr_hyg, _yr_hyg_max]
+        l_r["yaxis"]["fixedrange"] = False
+        l_r["xaxis"]["fixedrange"] = False
         fig_ratio.update_layout(**l_r)
         st.plotly_chart(fig_ratio, use_container_width=True)
 
@@ -853,10 +892,10 @@ def render():
     vix_t  = _trim(D["vix"],  cut)
     ted_t  = _trim(D["ted"],  cut)
 
-    # NFCI — dynamic Y range
-    nfci_all = D["nfci"].dropna()
-    nfci_min = float(nfci_all.min()) - 0.2 if len(nfci_all) else -3
-    nfci_max = float(nfci_all.max()) + 0.2 if len(nfci_all) else 3
+    # NFCI — dynamic Y range from VISIBLE period (not full history)
+    nfci_min_v, nfci_max_v = _yrange([nfci_t], pad=0.15)
+    nfci_min = nfci_min_v if nfci_min_v is not None else -3
+    nfci_max = nfci_max_v if nfci_max_v is not None else 3
     nfci_ma52 = nfci_t.rolling(52).mean()
 
     fig_nf = go.Figure()
@@ -880,57 +919,21 @@ def render():
                                 hovertemplate="<b>52W MA</b>: %{y:+.3f}<extra></extra>"))
     fig_nf.add_hline(y=0, line_color=MUTED, line_width=1)
 
-    l_nf = _L(280)
-    l_nf["barmode"] = "overlay"
-    l_nf["yaxis"]["range"] = [nfci_min, nfci_max]
+    l_nf = _L(300)
+    l_nf["barmode"]          = "overlay"
+    l_nf["yaxis"]["range"]   = [nfci_min, nfci_max]
+    l_nf["yaxis"]["fixedrange"] = False
+    l_nf["xaxis"]["fixedrange"] = False
     fig_nf.update_layout(**l_nf)
     st.plotly_chart(fig_nf, use_container_width=True)
-
-    # VIX + TED in two columns
-    col_vix, col_ted = st.columns(2)
-    with col_vix:
-        if len(vix_t.dropna()):
-            vix_colors = [RED if v > 30 else (AMBER if v > 20 else GREEN) for v in vix_t.values]
-            fig_vix = go.Figure()
-            fig_vix.add_trace(go.Scatter(
-                name="VIX", x=vix_t.index, y=vix_t.values,
-                line=dict(color=ORANGE, width=2),
-                fill="tozeroy", fillcolor="rgba(249,115,22,0.08)",
-                hovertemplate="<b>VIX</b>: %{y:.1f}<extra></extra>",
-            ))
-            fig_vix.add_hrect(y0=30, y1=90, fillcolor=RED, opacity=0.05, line_width=0,
-                              annotation_text="Stress >30", annotation_font=dict(color=RED, size=9))
-            fig_vix.add_hrect(y0=20, y1=30, fillcolor=AMBER, opacity=0.05, line_width=0)
-            l_vix = _L(220, "VIX — Volatilidad implícita equity")
-            fig_vix.update_layout(**l_vix)
-            st.plotly_chart(fig_vix, use_container_width=True)
-
-    with col_ted:
-        if len(ted_t.dropna()):
-            fig_ted = go.Figure()
-            fig_ted.add_trace(go.Scatter(
-                name="TED Spread", x=ted_t.index, y=ted_t.values,
-                line=dict(color=VIOLET, width=2),
-                fill="tozeroy", fillcolor="rgba(167,139,250,0.08)",
-                hovertemplate="<b>TED</b>: %{y:.2f}%<extra></extra>",
-            ))
-            fig_ted.add_hline(y=0.5, line_color=AMBER, line_width=1, line_dash="dot",
-                              annotation_text="Stress threshold",
-                              annotation_font=dict(color=AMBER, size=9))
-            l_ted_lay = _L(220, "TED Spread — Stress interbancario")
-            l_ted_lay["yaxis"]["ticksuffix"] = "%"
-            fig_ted.update_layout(**l_ted_lay)
-            st.plotly_chart(fig_ted, use_container_width=True)
 
     nfci_interp = "RESTRICTIVAS" if l_nfci > 0.3 else ("NEUTRALES" if l_nfci > -0.3 else "LAXAS")
     nfci_c = RED if l_nfci > 0.3 else (AMBER if l_nfci > -0.3 else GREEN)
     st.markdown(
         f'<div class="insight">🌡️ NFCI: <b style="color:{nfci_c}">{l_nfci:+.3f}</b> — '
         f'condiciones <b style="color:{nfci_c}">{nfci_interp}</b>. '
-        f'VIX: <b style="color:{ORANGE}">{l_vix:.1f}</b> '
-        f'{"— stress elevado" if l_vix > 30 else ("— cautela" if l_vix > 20 else "— risk-on")}. '
-        f'TED Spread: <b style="color:{VIOLET}">{l_ted:.2f}%</b> — '
-        f'{"stress interbancario" if l_ted > 0.5 else "condiciones interbancarias normales"}.</div>',
+        f'El NFCI resume 105 indicadores de money markets, deuda y equity. '
+        f'Lecturas sostenidas > 0 históricamente preceden contracción del crédito.</div>',
         unsafe_allow_html=True)
 
     # ── SECTION 6: RATE SNAPSHOT TABLE ────────────────────────────────────────
