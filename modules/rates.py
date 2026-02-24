@@ -219,6 +219,12 @@ def _trim(s, cut):
     if cut == 0: return s
     return s.iloc[cut:] if len(s) > abs(cut) else s
 
+def _clip_x(s, x_start):
+    """Hard-clip a series to start no earlier than x_start date."""
+    if x_start is None or len(s) == 0:
+        return s
+    return s[s.index >= x_start]
+
 def _yrange(series_list, pad=0.20, floor=None):
     """Calculate dynamic Y range from list of visible series."""
     all_vals = pd.concat([s.dropna() for s in series_list if len(s.dropna()) > 0])
@@ -229,6 +235,13 @@ def _yrange(series_list, pad=0.20, floor=None):
     if floor is not None:
         y_min = max(y_min, floor)
     return round(y_min, 3), round(y_max, 3)
+
+def _xrange(series_list):
+    """Get x range (date range) from list of trimmed series."""
+    all_idx = pd.concat([s.dropna() for s in series_list if len(s.dropna()) > 0]).index
+    if len(all_idx) == 0:
+        return None, None
+    return all_idx.min(), all_idx.max()
 
 def _regime_label(real, spr, nfci, hy_bp):
     """Derive cycle regime from real rate, 2s10s, NFCI, HY."""
@@ -381,11 +394,19 @@ def render():
     onrrp_t = _trim(D["onrrp"],   cut)
     onvol_t = _trim(D["onrrp_vol"], cut)
 
+    # x_start: earliest date of the trimmed ff_t — hard clip all series to this
+    x_start_corr = ff_t.dropna().index.min() if len(ff_t.dropna()) else None
+    ff_t    = _clip_x(ff_t,    x_start_corr)
+    sofr_t  = _clip_x(sofr_t,  x_start_corr)
+    iorb_t  = _clip_x(iorb_t,  x_start_corr)
+    onrrp_t = _clip_x(onrrp_t, x_start_corr)
+    onvol_t = _clip_x(onvol_t, x_start_corr)
+
     fig_corr = make_subplots(specs=[[{"secondary_y": True}]])
 
     # Fed target range as band
-    lb = _trim(D["fed_lb"], cut).dropna()
-    ub = _trim(D["fed_ub"], cut).dropna()
+    lb = _clip_x(_trim(D["fed_lb"], cut).dropna(), x_start_corr)
+    ub = _clip_x(_trim(D["fed_ub"], cut).dropna(), x_start_corr)
     common_fed = lb.index.intersection(ub.index)
     if len(common_fed):
         fig_corr.add_trace(go.Scatter(
@@ -438,7 +459,11 @@ def render():
         gridcolor="rgba(0,0,0,0)", zeroline=False,
         fixedrange=False, secondary_y=True,
     )
-    fig_corr.update_xaxes(gridcolor=GRID, linecolor=GRID, fixedrange=False)
+    _xmin_c, _xmax_c = _xrange([ff_t, sofr_t, iorb_t, onrrp_t])
+    fig_corr.update_xaxes(
+        gridcolor=GRID, linecolor=GRID, fixedrange=False,
+        range=[_xmin_c, _xmax_c] if _xmin_c is not None else None,
+    )
     st.plotly_chart(fig_corr, use_container_width=True)
 
     rrp_vol_last = _last(D["onrrp_vol"]) / 1000
@@ -542,6 +567,12 @@ def render():
         r30_h = _trim(D["dgs30"],  cut)
         spr_h = _trim(D["t10y2y"], cut)
         s3m_h = _trim(D["t10y3m"], cut)
+        x_start_hist = r10_h.dropna().index.min() if len(r10_h.dropna()) else None
+        r2_h  = _clip_x(r2_h,  x_start_hist)
+        r10_h = _clip_x(r10_h, x_start_hist)
+        r30_h = _clip_x(r30_h, x_start_hist)
+        spr_h = _clip_x(spr_h, x_start_hist)
+        s3m_h = _clip_x(s3m_h, x_start_hist)
 
         fig_hist = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -580,7 +611,11 @@ def render():
         fig_hist.update_yaxes(title_text="Spread %", gridcolor="rgba(0,0,0,0)",
                               zeroline=False, secondary_y=True,
                               title_font=dict(color=AMBER, size=10))
-        fig_hist.update_xaxes(gridcolor=GRID, linecolor=GRID)
+        _xmin_h, _xmax_h = _xrange([r2_h, r10_h, r30_h])
+        fig_hist.update_xaxes(
+            gridcolor=GRID, linecolor=GRID, fixedrange=False,
+            range=[_xmin_h, _xmax_h] if _xmin_h is not None else None,
+        )
         st.plotly_chart(fig_hist, use_container_width=True)
 
         st.markdown(
@@ -652,11 +687,17 @@ def render():
         r10_p   = _trim(D["dgs10"],    cut)
         bei_p   = _trim(D["bei10"],    cut)
 
+        x_start_pol = ff_p.dropna().index.min() if len(ff_p.dropna()) else None
+        ff_p   = _clip_x(ff_p,   x_start_pol)
+        tips_p = _clip_x(tips_p, x_start_pol)
+        r10_p  = _clip_x(r10_p,  x_start_pol)
+        bei_p  = _clip_x(bei_p,  x_start_pol)
+
         fig_pol = go.Figure()
 
         # Fed target range band
-        lb_p = _trim(D["fed_lb"], cut).dropna()
-        ub_p = _trim(D["fed_ub"], cut).dropna()
+        lb_p = _clip_x(_trim(D["fed_lb"], cut).dropna(), x_start_pol)
+        ub_p = _clip_x(_trim(D["fed_ub"], cut).dropna(), x_start_pol)
         ci   = lb_p.index.intersection(ub_p.index)
         if len(ci):
             fig_pol.add_trace(go.Scatter(
@@ -704,6 +745,9 @@ def render():
             l_pol["yaxis"]["range"] = [_yr_pol, _yr_pol_max]
         l_pol["yaxis"]["fixedrange"] = False
         l_pol["xaxis"]["fixedrange"] = False
+        _xmin_p, _xmax_p = _xrange([ff_p, r10_p, tips_p])
+        if _xmin_p is not None:
+            l_pol["xaxis"]["range"] = [_xmin_p, _xmax_p]
         fig_pol.update_layout(**l_pol)
         st.plotly_chart(fig_pol, use_container_width=True)
 
@@ -739,6 +783,10 @@ def render():
         mort_t = _trim(D["mortgage30"], cut)
         dxy_t  = _trim(D["dollar"],     cut)
         ff_t2  = _trim(D["fedfunds"],   cut)
+        x_start_tr = ff_t2.dropna().index.min() if len(ff_t2.dropna()) else None
+        mort_t = _clip_x(mort_t, x_start_tr)
+        dxy_t  = _clip_x(dxy_t,  x_start_tr)
+        ff_t2  = _clip_x(ff_t2,  x_start_tr)
 
         fig_tr = make_subplots(specs=[[{"secondary_y": True}]])
         if len(mort_t.dropna()):
@@ -775,7 +823,11 @@ def render():
             zeroline=False, secondary_y=True,
             title_font=dict(color=CYAN, size=10), fixedrange=False,
         )
-        fig_tr.update_xaxes(gridcolor=GRID, linecolor=GRID, fixedrange=False)
+        _xmin_tr, _xmax_tr = _xrange([mort_t, ff_t2, dxy_t])
+        fig_tr.update_xaxes(
+            gridcolor=GRID, linecolor=GRID, fixedrange=False,
+            range=[_xmin_tr, _xmax_tr] if _xmin_tr is not None else None,
+        )
         st.plotly_chart(fig_tr, use_container_width=True)
 
         mort_spread = l_mort - l_ff if not pd.isna(l_mort) else float("nan")
