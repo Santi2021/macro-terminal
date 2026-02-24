@@ -165,13 +165,7 @@ def load_fred_data(start: str = "1995-01-01") -> dict:
         except: data[name] = pd.Series(dtype=float)
     return data
 
-def _start_for_cut(cut: int) -> str:
-    """Map cut value to FRED start date — always relative to today."""
-    today = pd.Timestamp.today()
-    if cut == 0:      return "1995-01-01"
-    if cut <= -2520:  return (today - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
-    if cut <= -1260:  return (today - pd.DateOffset(years=6)).strftime("%Y-%m-%d")
-    return             (today - pd.DateOffset(years=3)).strftime("%Y-%m-%d")  # 2Y + 1Y buffer
+# _start_for_cut replaced by inline fetch_start logic
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -223,9 +217,11 @@ def _pctile(s, val):
     if len(d) == 0: return float("nan")
     return (d <= val).mean() * 100
 
-def _trim(s, cut):
-    if cut == 0: return s
-    return s.iloc[cut:] if len(s) > abs(cut) else s
+def _trim(s, start_date):
+    """Trim series to start_date — works regardless of frequency (daily/monthly/weekly)."""
+    if start_date is None:
+        return s
+    return s[s.index >= pd.Timestamp(start_date)]
 
 def _clip_x(s, x_start):
     """Hard-clip a series to start no earlier than x_start date."""
@@ -246,9 +242,10 @@ def _yrange(series_list, pad=0.20, floor=None):
 
 def _xrange(series_list):
     """Get x range (date range) from list of trimmed series."""
-    all_idx = pd.concat([s.dropna() for s in series_list if len(s.dropna()) > 0]).index
-    if len(all_idx) == 0:
+    valid = [s.dropna() for s in series_list if len(s.dropna()) > 0]
+    if not valid:
         return None, None
+    all_idx = pd.concat(valid).index
     return all_idx.min(), all_idx.max()
 
 def _regime_label(real, spr, nfci, hy_bp):
@@ -295,14 +292,24 @@ def render():
         rng = st.radio("", ["2Y","5Y","10Y","All"], index=0,
                        horizontal=True, label_visibility="collapsed",
                        key="rates_range")
-    cuts = {"2Y":-504, "5Y":-1260, "10Y":-2520, "All":0}
-    cut  = cuts[rng]
+    today = pd.Timestamp.today()
+    cut_dates = {
+        "2Y":  (today - pd.DateOffset(years=2)).strftime("%Y-%m-%d"),
+        "5Y":  (today - pd.DateOffset(years=5)).strftime("%Y-%m-%d"),
+        "10Y": (today - pd.DateOffset(years=10)).strftime("%Y-%m-%d"),
+        "All": None,
+    }
+    cut = cut_dates[rng]
 
     # ── Load data ──────────────────────────────────────────────────────────────
     with st.spinner("Loading rates data..."):
         try:
-            start_date = _start_for_cut(cut)
-            D   = load_fred_data(start_date)
+            # Add 1Y buffer for FRED fetch so _trim has enough data
+            if cut is None:
+                fetch_start = "1995-01-01"
+            else:
+                fetch_start = (pd.Timestamp(cut) - pd.DateOffset(years=1)).strftime("%Y-%m-%d")
+            D   = load_fred_data(fetch_start)
             tcv = load_treasury_curve()
             yfd = load_yf_data() if YF_AVAILABLE else {}
         except Exception as e:
