@@ -166,11 +166,12 @@ def load_fred_data(start: str = "1995-01-01") -> dict:
     return data
 
 def _start_for_cut(cut: int) -> str:
-    """Map cut value to FRED start date — fetch only what we need."""
+    """Map cut value to FRED start date — always relative to today."""
+    today = pd.Timestamp.today()
     if cut == 0:      return "1995-01-01"
-    if cut <= -2520:  return "2014-01-01"   # 10Y
-    if cut <= -1260:  return "2018-01-01"   # 5Y
-    return "2022-01-01"                      # 2Y — plenty of buffer
+    if cut <= -2520:  return (today - pd.DateOffset(years=11)).strftime("%Y-%m-%d")
+    if cut <= -1260:  return (today - pd.DateOffset(years=6)).strftime("%Y-%m-%d")
+    return             (today - pd.DateOffset(years=3)).strftime("%Y-%m-%d")  # 2Y + 1Y buffer
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
