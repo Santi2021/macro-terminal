@@ -2,6 +2,12 @@
 app.py — Macro Terminal · Top nav bar
 """
 
+import sys
+import os
+
+# ── Ensure project root is in Python path (required on Streamlit Cloud) ────────
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 
 st.set_page_config(
@@ -98,16 +104,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Navigation ─────────────────────────────────────────────────────────────────
-MODULES = [
-    ("📊  GDP",       "gdp"),
-    ("👷  Labor",     "labor"),
-    ("📈  Inflation", "inflation"),
-    ("🏢  Corporate", "corporate"),
-    ("📉  Rates",     "rates"),
-    ("🛢️  Energy",    "energy"),
-]
-
-tabs = st.tabs([m[0] for m in MODULES])
+tabs = st.tabs(["📊  GDP", "👷  Labor", "📈  Inflation", "🏢  Corporate", "📉  Rates", "🛢️  Energy"])
 
 with tabs[0]:
     from modules.gdp import render as render_gdp
