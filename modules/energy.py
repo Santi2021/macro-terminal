@@ -91,28 +91,28 @@ def _fred_fetch(sid: str, start: str = "2000-01-01") -> pd.Series:
 # Weekly Petroleum Status Report (WPSR)
 # All inventory in thousand barrels (Mb)
 
-EIA_WEEKLY = {
-    # Crude
-    "crude_stocks":     ("petroleum/stor/wstk", "WCRSTUS1",  "Weekly Crude Stocks USA"),
-    "crude_cushing":    ("petroleum/stor/wstk", "WCESUS1",   "Cushing OK Crude Stocks"),
-    "crude_spe":        ("petroleum/stor/wstk", "WCSSTUS1",  "Crude in SPR"),
-    # Products
-    "gasoline_stocks":  ("petroleum/stor/wstk", "WGTSTUS1",  "Total Gasoline Stocks"),
-    "distillate_stocks":("petroleum/stor/wstk", "WDISTUS1",  "Distillate Fuel Stocks"),
-    "jet_stocks":       ("petroleum/stor/wstk", "WKJSTUS1",  "Kerosene-Jet Fuel Stocks"),
+EIA_WEEKLY = {  # (route, series_id, description)
+    # Crude — ruta correcta: petroleum/stoc/wstk
+    "crude_stocks":     ("petroleum/stoc/wstk", "WCRSTUS1",              "Weekly Crude Stocks USA"),
+    "crude_cushing":    ("petroleum/sum/sndw",  "W_EPC0_SAX_YCUOK_MBBL", "Cushing OK Crude Stocks"),
+    "crude_spe":        ("petroleum/stoc/wstk", "WCSSTUS1",              "Crude in SPR"),
+    # Products — ruta correcta: petroleum/stoc/wstk
+    "gasoline_stocks":  ("petroleum/stoc/wstk", "WGTSTUS1",              "Total Gasoline Stocks"),
+    "distillate_stocks":("petroleum/stoc/wstk", "WDISTUS1",              "Distillate Fuel Stocks"),
+    "jet_stocks":       ("petroleum/stoc/wstk", "WKJSTUS1",              "Kerosene-Jet Fuel Stocks"),
     # Production
-    "crude_prod":       ("petroleum/sum/sndw",  "WCRFPUS2",  "US Crude Production (kb/d)"),
+    "crude_prod":       ("petroleum/sum/sndw",  "WCRFPUS2",              "US Crude Production (kb/d)"),
     # Imports / Exports
-    "crude_imports":    ("petroleum/sum/sndw",  "WCRIMUS2",  "Crude Imports (kb/d)"),
-    "crude_exports":    ("petroleum/sum/sndw",  "WCREXUS2",  "Crude Exports (kb/d)"),
+    "crude_imports":    ("petroleum/sum/sndw",  "WCRIMUS2",              "Crude Imports (kb/d)"),
+    "crude_exports":    ("petroleum/sum/sndw",  "WCREXUS2",              "Crude Exports (kb/d)"),
     # Refining
-    "refinery_runs":    ("petroleum/sum/sndw",  "WCRRIUS2",  "Refinery Crude Runs (kb/d)"),
-    "refinery_util":    ("petroleum/sum/sndw",  "WPULEUS3",  "Refinery Utilization (%)"),
+    "refinery_runs":    ("petroleum/sum/sndw",  "WCRRIUS2",              "Refinery Crude Runs (kb/d)"),
+    "refinery_util":    ("petroleum/sum/sndw",  "WPULEUS3",              "Refinery Utilization (%)"),
     # Implied demand (product supplied = proxy demand)
-    "gasoline_demand":  ("petroleum/sum/sndw",  "WGFUPUS2",  "Gasoline Supplied (kb/d)"),
-    "distillate_demand":("petroleum/sum/sndw",  "WDIFUPUS2", "Distillate Supplied (kb/d)"),
-    "jet_demand":       ("petroleum/sum/sndw",  "WKJUPUS2",  "Jet Fuel Supplied (kb/d)"),
-    "total_demand":     ("petroleum/sum/sndw",  "WTOTUPUS2", "Total Petroleum Supplied (kb/d)"),
+    "gasoline_demand":  ("petroleum/sum/sndw",  "WGFUPUS2",              "Gasoline Supplied (kb/d)"),
+    "distillate_demand":("petroleum/sum/sndw",  "WDIUPUS2",              "Distillate Supplied (kb/d)"),
+    "jet_demand":       ("petroleum/sum/sndw",  "WKJUPUS2",              "Jet Fuel Supplied (kb/d)"),
+    "total_demand":     ("petroleum/sum/sndw",  "WRPUPUS2",              "Total Petroleum Supplied (kb/d)"),
 }
 
 # FRED series
