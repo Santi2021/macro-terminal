@@ -127,5 +127,10 @@ with tabs[4]:
     render_rates()
 
 with tabs[5]:
-    from modules.energy import render as render_energy
-    render_energy()
+    try:
+        from modules.energy import render as render_energy
+        render_energy()
+    except Exception as e:
+        import traceback
+        st.error(str(e))
+        st.code(traceback.format_exc())
