@@ -99,33 +99,36 @@ st.markdown("""
 
 # ── Navigation ─────────────────────────────────────────────────────────────────
 MODULES = [
-    ("📊  GDP",       "gdp",       True),
-    ("👷  Labor",     "labor",     True),
-    ("📈  Inflation", "inflation", True),
-    ("🏢  Corporate", "corporate", True),
-    ("📉  Rates",     "rates",     True),
-    ("🛢️  Energy",    "energy",    True),
+    ("📊  GDP",       "gdp"),
+    ("👷  Labor",     "labor"),
+    ("📈  Inflation", "inflation"),
+    ("🏢  Corporate", "corporate"),
+    ("📉  Rates",     "rates"),
+    ("🛢️  Energy",    "energy"),
 ]
 
 tabs = st.tabs([m[0] for m in MODULES])
 
-for tab, (label, module_name, is_live) in zip(tabs, MODULES):
-    with tab:
-        if module_name == "gdp":
-            from modules.gdp import render as render_gdp
-            render_gdp()
-        elif module_name == "labor":
-            from modules.labor import render as render_labor
-            render_labor()
-        elif module_name == "inflation":
-            from modules.inflation import render as render_inflation
-            render_inflation()
-        elif module_name == "corporate":
-            from modules.corporate import render as render_corporate
-            render_corporate()
-        elif module_name == "rates":
-            from modules.rates import render as render_rates
-            render_rates()
-        elif module_name == "energy":
-            from modules.energy import render as render_energy
-            render_energy()
+with tabs[0]:
+    from modules.gdp import render as render_gdp
+    render_gdp()
+
+with tabs[1]:
+    from modules.labor import render as render_labor
+    render_labor()
+
+with tabs[2]:
+    from modules.inflation import render as render_inflation
+    render_inflation()
+
+with tabs[3]:
+    from modules.corporate import render as render_corporate
+    render_corporate()
+
+with tabs[4]:
+    from modules.rates import render as render_rates
+    render_rates()
+
+with tabs[5]:
+    from modules.energy import render as render_energy
+    render_energy()
