@@ -92,18 +92,19 @@ st.markdown("""
         <span style="font-family:'IBM Plex Mono',monospace; font-size:1rem; font-weight:300; color:#e8e8f0; letter-spacing:0.08em; margin-left:4px;">TERMINAL</span>
     </div>
     <div style="font-family:'IBM Plex Mono',monospace; font-size:0.6rem; color:#3d3d5c; letter-spacing:0.15em;">
-        BEA · BLS · FRED
+        BEA · BLS · FRED · EIA
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ── Navigation ─────────────────────────────────────────────────────────────────
 MODULES = [
-    ("📊  GDP",          "gdp",       True),
-    ("👷  Labor",        "labor",     True),
-    ("📈  Inflation",    "inflation", True),
-    ("🏢  Corporate",    "corporate", True),
-    ("📉  Rates",        "rates",     True),
+    ("📊  GDP",       "gdp",       True),
+    ("👷  Labor",     "labor",     True),
+    ("📈  Inflation", "inflation", True),
+    ("🏢  Corporate", "corporate", True),
+    ("📉  Rates",     "rates",     True),
+    ("🛢️  Energy",    "energy",    True),
 ]
 
 tabs = st.tabs([m[0] for m in MODULES])
@@ -125,3 +126,6 @@ for tab, (label, module_name, is_live) in zip(tabs, MODULES):
         elif module_name == "rates":
             from modules.rates import render as render_rates
             render_rates()
+        elif module_name == "energy":
+            from modules.energy import render as render_energy
+            render_energy()
