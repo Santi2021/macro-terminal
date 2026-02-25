@@ -113,6 +113,8 @@ EIA_WEEKLY = {  # (route, series_id, description)
     "distillate_demand":("petroleum/sum/sndw",  "WDIUPUS2",              "Distillate Supplied (kb/d)"),
     "jet_demand":       ("petroleum/sum/sndw",  "WKJUPUS2",              "Jet Fuel Supplied (kb/d)"),
     "total_demand":     ("petroleum/sum/sndw",  "WRPUPUS2",              "Total Petroleum Supplied (kb/d)"),
+    # Rig count — Baker Hughes via EIA (monthly)
+    "rig_oil":          ("petroleum/crd/drill", "E_ERTRRO_XR0_NUS_C",  "US Oil Rotary Rigs (count)", "monthly"),
 }
 
 # FRED series
@@ -123,19 +125,19 @@ FRED_ENERGY = {
     "gasoline_r": "GASREGCOVW",      # US Regular Gasoline retail $/gallon
     "dxy":        "DTWEXBGS",        # Broad USD Index
     "tips10":     "DFII10",          # 10Y Real yield
-    "rig_oil":    "WCOILCNTFLD",     # Baker Hughes oil rig count (weekly)
+    "natgas_2":   "MHHNGSP",         # Henry Hub monthly backup (unused)
 }
 
 # ── Data loaders ───────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600*4, show_spinner=False)   # EIA updates Wed ~10:30am ET
-def load_eia_series(series_id: str, route: str, start: str = "2015-01-01") -> pd.Series:
+def load_eia_series(series_id: str, route: str, start: str = "2015-01-01", frequency: str = "weekly") -> pd.Series:
     """
-    Fetch a single EIA weekly series.
+    Fetch a single EIA series (weekly or monthly).
     Returns pd.Series indexed by date.
     """
     params = {
-        "frequency": "weekly",
+        "frequency": frequency,
         "data[0]": "value",
         "facets[series][]": series_id,
         "sort[0][column]": "period",
@@ -159,9 +161,11 @@ def load_eia_series(series_id: str, route: str, start: str = "2015-01-01") -> pd
 def load_all_eia(start: str = "2015-01-01") -> dict:
     """Load all EIA weekly series into a dict of pd.Series."""
     out = {}
-    for name, (route, sid, _) in EIA_WEEKLY.items():
+    for name, entry in EIA_WEEKLY.items():
+        route, sid = entry[0], entry[1]
+        freq = entry[3] if len(entry) > 3 else "weekly"
         try:
-            out[name] = load_eia_series(sid, route, start)
+            out[name] = load_eia_series(sid, route, start, freq)
         except Exception as e:
             out[name] = pd.Series(dtype=float, name=name)
     return out
@@ -395,7 +399,7 @@ def render():
     l_brent  = _last(F["brent"])
     l_spread = l_brent - l_wti          # Brent premium
     l_natgas = _last(F["natgas"])
-    l_rig    = _last(F["rig_oil"])
+    l_rig    = _last(E["rig_oil"])
 
     wti_1w   = _chg(F["wti"], 5)
     wti_1m   = _chg(F["wti"], 22)
@@ -592,14 +596,14 @@ def render():
                 unsafe_allow_html=True)
 
     prod_t = _trim(E["crude_prod"], cut)
-    rig_t  = _trim(F["rig_oil"],   cut)
+    rig_t  = _trim(E["rig_oil"],   cut)
     imp_t  = _trim(E["crude_imports"], cut)
     exp_t  = _trim(E["crude_exports"], cut)
 
     sup_tabs = st.tabs(["📦 Producción + Rigs", "🔄 Imports vs Exports"])
 
     with sup_tabs[0]:
-        if len(prod_t) and len(rig_t):
+        if len(prod_t):
             fig_sup = make_subplots(specs=[[{"secondary_y": True}]])
 
             fig_sup.add_trace(go.Scatter(
@@ -1075,7 +1079,7 @@ def render():
         ("Refinery Runs (kb/d)",E["refinery_runs"],    "level"),
         ("Refinery Util (%)",  E["refinery_util"],     "pct"),
         ("Total Demand (kb/d)",E["total_demand"],      "level"),
-        ("Oil Rig Count",      F["rig_oil"],           "level"),
+        ("Oil Rig Count",      E["rig_oil"],           "level"),
         ("USD Index",          F["dxy"],               "idx"),
         ("10Y Real Yield",     F["tips10"],            "rate"),
     ]
